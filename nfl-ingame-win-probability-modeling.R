@@ -28,7 +28,10 @@ rm(games_list)
 # merge the two, spreading game-level data across all plays from that game
 df <- left_join(pbp_df, games_df)
 
-# get historical game data from FiveThirtyEight repo so we can use their pregame win probability in model
+# Get historical game data from FiveThirtyEight repo so we can use their pregame win probability in model. Even with
+# the fixes to team labels that follows in a sec, I still lose something like 1,000+ rows in this merge with NAs
+# appearing in key fields, and I'm not totally sure why. For current purposes, I decided it wasn't worth my while
+# to run that down and fix it.
 nfl538 <- read.csv("https://raw.githubusercontent.com/fivethirtyeight/nfl-elo-game/master/data/nfl_games.csv",
                    stringsAsFactors = FALSE) %>%
   filter(season >= 2009) %>%
