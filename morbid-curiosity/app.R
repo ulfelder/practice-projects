@@ -113,6 +113,22 @@ ui <- fluidPage(
 
 server <- function(input, output) {
 
+    # throw an error message if the user tries to look outside the range of available data
+    observe({
+
+        if (input$age + input$span > max(life_table$exact_age))
+
+            showModal(modalDialog(
+
+                title = "Error message",
+                "Your query runs beyond the maximum age in the life table (119). Please lower the age or span or both.",
+                easyClose = TRUE,
+                footer = NULL
+
+            )) 
+
+    })
+  
     output$deathometer <- renderPlot({
 
         # run helper function over user-selected inputs
