@@ -1,19 +1,11 @@
 # function to scrape and transform tables of fractional odds from oddschecker.com
+# NOTE: for this to work, you need to target the page with fractional odds, not decimal odds or moneylines
 scrape_odds <- function(url) {
 
   require(tidyverse)
   require(rvest)
 
-  # vector of labels for the bookmakers; I'd like to do this programmatically, but the
-  # bookmakers are represented by images that contain their names rather than text,
-  # and I can't find labels in the html
-  sources <- c("bet365", "skybet", "ladbrokes", "william_hill", "marathon_bet",
-               "betfair", "betvictor", "paddypower", "unibet", "coral",
-               "betfred", "betway", "sports_nation", "boyle_sports", "vbet",
-               "juventus", "sporting_bet", "888sport", "moplay", "spreadx",
-               "redzone", "betfair_exchange", "betdaq", "matchbook", "smarkets")
-
-  # helper function within the function to convert fractional odds to probability scale
+  # helper function to convert fractional odds to probability scale
   odds_to_probs <- function(x) {
 
     y <- NA
@@ -31,8 +23,10 @@ scrape_odds <- function(url) {
 
   }
 
+  # scrape the whole page
   page_raw <- read_html(url)
 
+  # extract the big table with the odds and a bunch of extraneous crap
   odds_table <- page_raw %>%
     html_node("table.eventTable") %>%
     html_table()
@@ -41,28 +35,35 @@ scrape_odds <- function(url) {
   headspace <- which(odds_table$X1 == "QuickBet") + 2
   odds_table <- odds_table[headspace:nrow(odds_table),]
 
-  # split off the names of the categories
+  # get a one-col df of category labels
   targets <- odds_table[,1]
   
-  # split off the table of odds, also removing phantom col 23 (hopefully consistent)
-  odds <- select(odds_table, -1, -23)
+  # get a table that *only* contains the cols with odds, dropping col of row labels and phantom
+  # 22nd col that's just a break on scraped page
+  odds <- select(odds_table ,-1, -22)
 
-  # run the helper function to convert odds to probability scale
+  # scrape the names of the bookies and attach them to the table of odds
+  labels <- page_raw %>%
+    html_nodes(".bk-logo-click") %>%
+    html_attrs() %>%
+    map('title') %>%
+    unlist() %>%
+    unique(.)  # for some reason, the sequence of labels appears twice; this cuts it down w/o changing order
+  colnames(odds) <- labels
+
+  # run the helper function to convert those fractional odds to probability scale
   odds_transformed <- mutate_all(odds, function(x) sapply(x, odds_to_probs))
 
-  # recalibrate resulting probabilities to sum to 1 within markets
+  # recalibrate resulting probabilities to sum to 1 within bookies
   odds_calibrated <- mutate_all(odds_transformed, function(x) x/sum(x, na.rm = TRUE))
 
-  # attach the bookies names
-  colnames(odds_calibrated) <- sources
-
-  # get the unweighted mean across markets
+  # get the unweighted mean across bookies
   odds_calibrated$mean <- apply(odds_calibrated, 1, mean, na.rm = TRUE)
   
-  # attach the names of the categories
+  # reattach the names of the categories
   odds_calibrated$target <- targets
   
-  # pivot to long format to make plotting easier
+  # pivot to long format (tidy) to make plotting easier
   odds_long <- pivot_longer(odds_calibrated, -target, names_to = "source", values_to = "value")
 
   return(odds_long)
