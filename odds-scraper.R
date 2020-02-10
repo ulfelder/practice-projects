@@ -59,6 +59,9 @@ scrape_odds <- function(url) {
 
   # get the unweighted mean across bookies
   odds_calibrated$mean <- apply(odds_calibrated, 1, mean, na.rm = TRUE)
+                                
+  # rescale the means so they sum to 1
+  odds_calibrated$mean <- odds_calibrated$mean/sum(odds_calibrated$mean, na.rm = TRUE)
   
   # reattach the names of the categories
   odds_calibrated$target <- targets
