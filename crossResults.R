@@ -29,7 +29,8 @@ cx_results <- function(idno) {
 # function to scrape metadata for a single race by id no
 cx_metadata <- function(idno) {
 
-    require(tidyverse)
+    require(dplyr)
+    require(stringr)
     require(rvest)
   
     url <- sprintf("https://www.crossresults.com/race/%s", idno)
