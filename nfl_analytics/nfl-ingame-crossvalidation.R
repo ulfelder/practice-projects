@@ -11,6 +11,7 @@ memory.limit(size = 100000) # we're gonna need a bigger boat
 
 # DATA PREP ---
 
+# load data set created by nfl-ingame-data.R, here saved to my hard drive as csv
 df <- read.csv("c:/users/ulfel/documents/nfl_analytics/pbp_2009_2018.csv", stringsAsFactors = FALSE)
 
 df <- mutate(df, pos_net_score_final = ifelse(posteam == home, homescore - awayscore, awayscore - homescore), # target for linear regression
