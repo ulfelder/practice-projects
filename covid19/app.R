@@ -76,13 +76,14 @@ server <- function(input, output) {
     output$plot_global <- renderPlot({
 
         global %>%
+            # recompute confirmed as net of deaths and recovered for stacked plotting
+            mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
             pivot_longer(-date, names_to = "casetype", values_to = "n") %>%
-            filter(casetype != "n_recovered") %>%
             mutate(casetype = gsub("n_", "", casetype)) %>%
             ggplot(aes(x = date, y = n, fill = casetype)) +
-                geom_col() +
+                geom_col(alpha = 2/3) +
                 theme_minimal() +
-                scale_fill_manual(values = c("gray75", "red")) +
+                scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
                 labs(title = sprintf("COVID-19 cases worldwide as of %s", max(global$date)),
                      caption = "Data source: JHU CSEE") +
                 theme(axis.title.x = element_blank(),
