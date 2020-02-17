@@ -1,6 +1,7 @@
 library(tidyverse)
-library(shiny)
 library(lubridate)
+library(shiny)
+library(leaflet)
 
 options(stringsAsFactors = FALSE)
 
@@ -56,9 +57,11 @@ ui <- fluidPage(
 
         tabsetPanel(
 
-            tabPanel("Worldwide", plotOutput("plot_global", width = "750px", height = "400px")),
+            tabPanel("Trend worldwide", plotOutput("plot_global", width = "100%", height = "400px")),
 
-            tabPanel("By country", plotOutput("plot_national", width = "1200px", height = "500px"))
+            tabPanel("Trend by country", plotOutput("plot_national", width = "100%", height = "500px")),
+
+            tabPanel("World map of cumulative counts", leafletOutput("map_global", width = "100%", height = "500px"))
 
         )
 
@@ -105,9 +108,38 @@ server <- function(input, output) {
                            ncol = 6) +
                 theme(axis.title.x = element_blank(),
                       axis.title.y = element_blank(),
-                      legend.title = element_blank()) +
+                      legend.title = element_blank(),
+                      legend.position = "bottom") +
                 labs(title = sprintf("COVID-19 cases by country as of %s", max(national$date)),
                      caption = "Data source: JHU CSEE")
+
+    })
+
+    output$map_global <- renderLeaflet({
+
+        selected_date <- max(full$date)
+
+        mapdat <- full %>%
+            filter(date == selected_date) %>%
+            rename(latitude = Lat, longitude = Long) %>%
+            # recompute counts to radii of circles with proportionate area
+            mutate_at(vars(starts_with("n_")), ~ sqrt(./pi) )
+
+        # get coordinates of province at epicenter of epidemic to use as focal point for map
+        focal <- c(mapdat$latitude[mapdat$Province.State == "Hubei"], mapdat$longitude[mapdat$Province.State == "Hubei"])
+
+        leaflet() %>%
+            addProviderTiles(providers$CartoDB.Positron) %>%
+            setView(lat = focal[1], lng = focal[2], zoom = 2) %>%
+            addCircleMarkers(data = mapdat, lat = ~latitude, lng = ~longitude, radius = ~n_confirmed,
+                             color = "gray75", opacity = 0, fillOpacity = 1/4) %>%
+            addCircleMarkers(data = mapdat, lat = ~latitude, lng = ~longitude, radius = ~n_recovered,
+                             color = "dodgerblue", opacity = 0, fillOpacity = 1/4) %>%
+            addCircleMarkers(data = mapdat, lat = ~latitude, lng = ~longitude, radius = ~n_deaths,
+                             color = "red", opacity = 0, fillOpacity = 1/4) %>%
+            addLegend(position = "bottomright",
+                      colors = c("gray75", "dodgerblue", "red"), opacity = 1/3,
+                      labels = c("confirmed", "recovered", "deaths"))
 
     })
 
