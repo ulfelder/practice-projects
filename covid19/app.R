@@ -34,6 +34,9 @@ recovered <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19
 
 full <- Reduce(function(...) merge(..., all = TRUE), list(confirmed, deaths, recovered))
 
+# relabel this one so it's easier to find when alphabetized
+full$Country.Region[full$Country.Region == "Mainland China"] <- "China (mainland)"
+
 national <- full %>%
     group_by(Country.Region, date) %>%
     summarize_at(vars(starts_with("n_")), sum)
@@ -53,9 +56,9 @@ ui <- fluidPage(
 
         tabsetPanel(
 
-            tabPanel("Worldwide", plotOutput("plot_global", width = "600px", height = "400px")),
+            tabPanel("Worldwide", plotOutput("plot_global", width = "750px", height = "400px")),
 
-            tabPanel("By country", plotOutput("plot_national", width = "800px", height = "1200px"))
+            tabPanel("By country", plotOutput("plot_national", width = "1200px", height = "500px"))
 
         )
 
