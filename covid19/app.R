@@ -77,7 +77,7 @@ server <- function(input, output) {
                 geom_col() +
                 theme_minimal() +
                 scale_fill_manual(values = c("gray75", "red")) +
-                labs(title = "COVID-19 cases worldwide",
+                labs(title = sprintf("COVID-19 cases worldwide as of %s", max(global$date)),
                      caption = "Data source: JHU CSEE") +
                 theme(axis.title.x = element_blank(),
                       axis.title.y = element_blank(),
@@ -99,7 +99,7 @@ server <- function(input, output) {
                       axis.title.y = element_blank()) +
                 facet_wrap(vars(Country.Region),
                            scales = "free_y",
-                           ncol = 3) +
+                           ncol = 6) +
                 theme(axis.title.x = element_blank(),
                       axis.title.y = element_blank(),
                       legend.title = element_blank()) +
