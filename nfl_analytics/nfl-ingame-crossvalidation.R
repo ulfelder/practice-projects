@@ -12,9 +12,9 @@ memory.limit(size = 100000) # we're gonna need a bigger boat
 # DATA PREP ---
 
 # load data set created by nfl-ingame-data.R, here saved to my hard drive as csv
-df <- read.csv("c:/users/ulfel/documents/nfl_analytics/pbp_2009_2018.csv", stringsAsFactors = FALSE)
+df <- read.csv("c:/users/ulfel/documents/nfl_analytics/pbp_2009_2019.csv", stringsAsFactors = FALSE)
 
-df <- mutate(df, pos_net_score_final = ifelse(posteam == home, homescore - awayscore, awayscore - homescore), # target for linear regression
+df <- mutate(df, pos_net_score_final = ifelse(posteam == home, home_score - away_score, away_score - home_score), # target for linear regression
                  pos_result_final = as.factor(ifelse(pos_net_score_final > 0, 1, 0)), # target for classification
                  pos_net_score_realtime = PosTeamScore - DefTeamScore,
                  pos_home = as.factor(ifelse(posteam == home, "Yes", "No")),
