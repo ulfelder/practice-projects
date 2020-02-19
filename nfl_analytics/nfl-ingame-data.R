@@ -7,7 +7,7 @@ library(nflscrapR)
 options(stringsAsFactors = FALSE)
 
 # make a vector of years representing the seasons available via nflscrapR when I wrote this
-years <- seq(2009, 2018)
+years <- seq(2009, 2019)
 
 # scrape play-by-play data for those seasons; heads up, this takes a *really* long time
 pbp_df <- map(years, ~ season_play_by_play(.)) %>% bind_rows()
@@ -45,5 +45,7 @@ df <- select(df, -Date, -HomeTeam, -AwayTeam, -game_url)
 df <- select(df, Season, week, date, type, GameID, play_id, home, away, pregame_p_538, everything())
 
 # store or use...
+
+# write.csv(df, sprintf("~/nfl_analytics/pbp_%s_%s.csv", min(years), max(years)), row.names = FALSE)
 
 # Go Ravens!
