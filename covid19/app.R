@@ -125,6 +125,19 @@ cfr_ci <- round(100 * plogis(confint(fit)), 1)
 # simulations for plotting
 cfr_simulations <- sort(plogis(rnorm(10000, mean = coef(fit)[1], sd = sqrt(vcov(fit)))))
 
+# get links to WHO situation reports and give them pubdates as names
+sitreps <- read_html("https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports/") %>%
+    html_nodes("a") %>%
+    html_attr("href") %>%
+    grep("[0-9]{8}-sitrep-[0-9]{1,3}", ., value = TRUE) %>%
+    sprintf("https://www.who.int%s", .)
+
+sitrep_dates <- sitreps %>%
+    str_extract("[0-9]{8}") %>%
+    ymd()
+
+names(sitreps) <- sitrep_dates
+
 
 ## USER INTERFACE
 
@@ -137,7 +150,13 @@ ui <- fluidPage(
 
         tabsetPanel(
 
-            tabPanel("Trend worldwide", plotOutput("plot_global", width = "100%", height = "400px")),
+            tabPanel("Global trend",
+
+                br(),
+
+                plotOutput("plot_global", width = "100%", height = "400px")
+
+            ),
 
             tabPanel("Trend by country",
 
@@ -151,9 +170,31 @@ ui <- fluidPage(
 
             ),
 
-            tabPanel("World map of cumulative counts", leafletOutput("map_global", width = "100%", height = "500px")),
+            tabPanel("World map",
 
-            tabPanel("Estimated case fatality rate", plotOutput("plot_cfr", width = "80%", height = "400px"))
+                leafletOutput("map_global", width = "100%", height = "500px")
+
+            ),
+
+            tabPanel("Case fatality rate",
+
+                br(),
+
+                plotOutput("plot_cfr", width = "80%", height = "400px")
+
+            ),
+
+            tabPanel("WHO Situation Reports",
+
+                selectInput("sitrep_date",
+                            label = "",
+                            choices = sitrep_dates,
+                            selected = sitrep_dates[1],
+                            width = "200px"),
+                     
+                htmlOutput("frame")
+
+            )
 
         )
 
@@ -161,6 +202,7 @@ ui <- fluidPage(
 
 )
 
+               
 ## SERVER LOGIC
 
 server <- function(input, output) {
@@ -242,6 +284,12 @@ server <- function(input, output) {
             caption = "Following Althaus; see https://github.com/calthaus/ncov-cfr") +
             scale_y_continuous(breaks = seq(0,3000,1000), labels = c("0", "0.10", "0.20", "0.30")) +
             theme(axis.title.x = element_blank())
+
+    })
+
+    output$frame <- renderUI({
+
+        tags$iframe(style = "height:400px; width:100%; scrolling=yes", src = sitreps[input$sitrep_date])
 
     })
 
