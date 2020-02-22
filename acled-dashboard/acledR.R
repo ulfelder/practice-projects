@@ -3,17 +3,14 @@
 # NOTE: use of the data-loading functions implies acceptance of ACLED's terms of use; see
 # https://www.acleddata.com/wp-content/uploads/dlm_uploads/2018/12/TermsofUseAttributionPolicy_4.2019-1.pdf
 
-acled_year <- function(year = substr(Sys.Date(), 1, 4), country = NULL) {
+acled_year <- function(year = substr(Sys.Date(), 1, 4)) {
 
     require(httr)
     require(jsonlite)
 
     options(stringsAsFactors = FALSE)
  
-    my_query <- paste("http://api.acleddata.com/acled/read?terms=accept&limit=0",
-                      sprintf("year=%s", year),
-                      ifelse(is.null(country), "", country),
-                      sep = "&")
+    my_query <- sprintf("http://api.acleddata.com/acled/read?terms=accept&limit=0&year=%s", year)
 
     X <- GET(my_query)
 
@@ -32,10 +29,11 @@ acled_country <- function(country = "Nigeria") {
 
     require(httr)
     require(jsonlite)
+    require(countrycode)
 
     options(stringsAsFactors = FALSE)
 
-    code <- countrycode::countrycode(country, "country.name", "iso3n")
+    code <- countrycode(country, "country.name", "iso3n")
 
     my_query <- sprintf("http://api.acleddata.com/acled/read?terms=accept&limit=0&iso=%s", code)
 
