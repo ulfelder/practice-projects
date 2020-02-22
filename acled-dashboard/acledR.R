@@ -84,10 +84,8 @@ acled_como <- function(acled_df, windows = TRUE) {
     como_grid <- map_dfr(split(M, seq(nrow(M))), function(dfrow) {
 
         df <- with(dfrow, expand.grid(iso = iso.code,
-  	                                year = seq(year(start.date), year(Sys.Date())),
-  	                                month = seq(12),
-  	                                stringsAsFactors = FALSE))
-
+  	                                  year = seq(year(start.date), year(Sys.Date())), 
+  	                                  month = seq(12))  # for now, all countries start observation in Jan
 
         # lop off excess months in current year w/two-week buffer for delayed updating
         df <- filter(df, date(paste(year, month, "01", sep="-")) <= Sys.Date() - 14)
