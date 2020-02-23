@@ -54,8 +54,10 @@ ui <- fluidPage(
 
     fluidRow(
 
-        column(width = 4, 
+        column(width = 4, offset = 1,
 
+            br(),
+               
             br(),
 
             plotOutput("plot_ridges")
