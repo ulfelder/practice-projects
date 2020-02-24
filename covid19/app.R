@@ -130,7 +130,8 @@ sitreps <- read_html("https://www.who.int/emergencies/diseases/novel-coronavirus
     html_nodes("a") %>%
     html_attr("href") %>%
     grep("[0-9]{8}-sitrep-[0-9]{1,3}", ., value = TRUE) %>%
-    sprintf("https://www.who.int%s", .)
+    sprintf("https://www.who.int%s", .) %>%
+    unique(.)
 
 sitrep_dates <- sitreps %>%
     str_extract("[0-9]{8}") %>%
