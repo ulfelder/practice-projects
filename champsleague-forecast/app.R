@@ -20,7 +20,8 @@ tbook <- bookies %>%
     transmute(team = target, p_book = value)
 
 # scrape and clean 538's forecast table
-t538 <- read_html("https://projects.fivethirtyeight.com/soccer-predictions/champions-league/") %>%
+url_538 <- "https://projects.fivethirtyeight.com/soccer-predictions/champions-league/"
+t538 <- read_html(url_538) %>%
     html_node("#forecast-table") %>%
     html_table(fill = TRUE, header = FALSE) %>%
     slice(-1:-3) %>%
@@ -54,17 +55,17 @@ ui <- fluidPage(
 
     fluidRow(
 
-        column(width = 4, offset = 1,
+        column(width = 6,
+
+            plotOutput("plot_ridges"),
 
             br(),
-               
-            br(),
 
-            plotOutput("plot_ridges")
+            htmlOutput("frame_538")
 
         ),
 
-        column(width = 4, offset = 1, 
+        column(width = 3, offset = 1, 
 
             tableOutput("table_forecast")
 
@@ -85,13 +86,20 @@ server <- function(input, output) {
 
     })
 
+    output$frame_538 <- renderUI({
+
+        tags$iframe(style = "height:400px; width:100%; scrolling=yes",
+                    src = url_538)
+
+    })
+
     output$table_forecast <- function() {
 
         t_blend %>%
             arrange(-p_blend) %>%
             mutate(p_blend = round(p_blend, 3)) %>%
-            select(team, prob = p_blend) %>%
-            knitr::kable("html", caption = "Blended forecast") %>%
+            select(team, p_blend) %>%
+            knitr::kable("html") %>%
             kable_styling(full_width = FALSE)
 
     }
@@ -101,3 +109,4 @@ server <- function(input, output) {
 # ---- HIT IT ----
 
 shinyApp(ui, server)
+
