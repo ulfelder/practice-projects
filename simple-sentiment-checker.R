@@ -10,8 +10,6 @@ nrc_sentiments <- nrc %>%
     filter(sentiment == "negative" | sentiment == "positive") %>%
     mutate(color = recode(sentiment, positive = "Aqua", negative = "Yellow"))
 
-default.color <- NULL
-
 ui <- mainPanel(    
 
     fluidRow(
