@@ -20,13 +20,13 @@ ui <- mainPanel(
 
         br(),
 
-        uiOutput("thetextoutput"),
+        uiOutput("highlighted_text"),
 
         br(),
 
         br(),
 
-        uiOutput("score")
+        uiOutput("net_score")
     
     )
   
@@ -34,7 +34,7 @@ ui <- mainPanel(
 
 server <- function(input, output) {
   
-    output$thetextoutput <- renderUI({
+    output$highlighted_text <- renderUI({
     
         bag_of_words <- strsplit(input$usertext, " ")[[1]]
     
@@ -54,7 +54,7 @@ server <- function(input, output) {
     
     }) 
 
-    output$score <- renderText({
+    output$net_score <- renderText({
 
         bag_of_words <- strsplit(input$usertext, " ")[[1]]
 
