@@ -41,13 +41,16 @@ speech_links <- map(year_links, function(x) {
 
 })
 
-# convert list of vectors of links by year to one long vector
-speech_links <- unlist(speech_links)
+# convert list of vectors of links by year to one long vector and keep only unique elements
+speech_links <- unique(unlist(speech_links))
 
 # name the elements of that vector of urls so the user sees something more intelligble when selecting
 # in the ui to come. with selectInput, names of vector elements are automatically displayed to the user
 # instead of the vector elements themselves.
-speech_ids <- str_extract(speech_links, "[a-z]{3,}[0-9]{8}")
+
+# make a unique id for each speech derived from the url
+speech_ids <- gsub("https://www.federalreserve.gov/newsevents/speech/", "", speech_links)
+speech_ids <- gsub("\\.htm", "", speech_ids)
 speech_ids <- paste(str_to_title(str_extract(speech_ids, "[a-z]{3,}")), ymd(str_extract(speech_ids, "[0-9]{8}")))
 names(speech_links) <- speech_ids
 # note that a few urls don't follow the pattern of namedate, so this process returns a few labels of "NA NA"
