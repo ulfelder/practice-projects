@@ -14,7 +14,7 @@ set.seed(20912)
 # https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series
 
 confirmed <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Confirmed.csv") %>%
-    pivot_longer(cols = matches("^X[1-2]{1}"), names_to = "date", values_to = "n_confirmed") %>%
+    pivot_longer(cols = matches("^X[0-9]{1,2}"), names_to = "date", values_to = "n_confirmed") %>%
     separate(date, c("month", "day", "year"), sep = "\\.") %>%
     mutate(month = gsub("X", "", month),
            year = paste0("20", year),
@@ -22,7 +22,7 @@ confirmed <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19
     dplyr::select(Country.Region, Province.State, Lat, Long, date, n_confirmed)
 
 deaths <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Deaths.csv") %>%
-    pivot_longer(cols = matches("^X[1-2]{1}"), names_to = "date", values_to = "n_deaths") %>%
+    pivot_longer(cols = matches("^X[0-9]{1,2}"), names_to = "date", values_to = "n_deaths") %>%
     separate(date, c("month", "day", "year"), sep = "\\.") %>%
     mutate(month = gsub("X", "", month),
            year = paste0("20", year),
@@ -30,7 +30,7 @@ deaths <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/ma
     dplyr::select(Country.Region, Province.State, Lat, Long, date, n_deaths)
 
 recovered <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Recovered.csv") %>%
-    pivot_longer(cols = matches("^X[1-2]{1}"), names_to = "date", values_to = "n_recovered") %>%
+    pivot_longer(cols = matches("^X[0-9]{1,2}"), names_to = "date", values_to = "n_recovered") %>%
     separate(date, c("month", "day", "year"), sep = "\\.") %>%
     mutate(month = gsub("X", "", month),
            year = paste0("20", year),
