@@ -175,9 +175,14 @@ ui <- navbarPage(inverse = TRUE, windowTitle = "Fedspeak",
 
                 mainPanel(
 
-                    plotOutput("topic_gauge_plot"),
+                    # use negative margins to reduce whitespace between plot and navbar and then between plots
+                    div(style = "margin-top: -5em; margin-bottom: 0em",
+                        fluidRow(column = 8, plotOutput("topic_gauge_plot"))
+                    ),
 
-                    plotOutput("topic_term_plot")
+                    div(style = "margin-top:-5em",
+                        fluidRow(column = 8, plotOutput("topic_term_plot"))
+                    )
 
                 )
 
@@ -293,7 +298,7 @@ server <- function(input, output) {
 
         tagList(
 
-            h3(x$title),
+            h3(em(x$title)),
 
             h4(x$speaker),
 
@@ -476,7 +481,7 @@ server <- function(input, output) {
             theme_void() +
             theme(strip.background = element_blank(),
                   strip.text.x = element_blank(),
-                  plot.margin = margin(1,0,0,1,"cm")) +
+                  plot.margin = margin(0, 0.5, 0, 2, "cm")) +
             guides(fill=FALSE) +
             guides(colour=FALSE)
 
@@ -492,7 +497,7 @@ server <- function(input, output) {
                 coord_flip() +
                 scale_x_reordered() +
                 theme(panel.grid.minor = element_blank(),
-                      plot.margin = margin(0,1,1,1,"cm")) +
+                      plot.margin = margin(0, 1.5, 0, 1.5, "cm")) +
                 scale_fill_manual(values = my_pal) +
                 scale_y_continuous(breaks = seq(0,0.04,0.01), labels = c("0", "0.01", "0.02", "0.03", "0.04")) +
                 xlab(NULL)
