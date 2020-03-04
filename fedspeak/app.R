@@ -89,13 +89,11 @@ ui <- navbarPage(inverse = TRUE, windowTitle = "Fedspeak",
                 sidebarPanel(
 
                     div(p("This app interactively applies some common natural language processing (NLP) routines
-                          to more than 800 speeches by U.S. Federal Reserve officials from 2006 to the present,
-                          as scraped from the Fed's online archive (",
-                          a(href = "https://www.federalreserve.gov/newsevents/speeches.htm", "here", .noWS = "outside"),
-                          ")."),
+                          to speeches by U.S. Federal Reserve officials, as scraped from the Fed's",
+                          a("online archive.", href = "https://www.federalreserve.gov/newsevents/speeches.htm")),
                         p("Pick a speech to analyze. You can read the full text of the speech on this tab, then open
                           other tabs to learn about the sentiment and topics of the speech and how they compare to
-                          other speeches in the corpus."),
+                          other speeches by Fed officials since 2006."),
                         style = "font-family: verdana;"),
 
                     selectInput("speech", "", choices = speech_links)
