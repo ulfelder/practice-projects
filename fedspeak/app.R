@@ -16,11 +16,22 @@ library(streamgraph)
 
 options(stringsAsFactors = FALSE)
 
-# load stored workspace with historical data, topic modeling objects, and some plots
-load("data/topic-models-and-emotion-plots.RData")
+
+# ---- LOAD DATA AND OBJECTS ----
+
+# load stored workspace with topic modeling objects, including streamgraph
+load("data/fedspeak-topic-models.RData")
+
+# load csv of historical data
+fedspeak_df <- read.csv("data/fed_speeches_and_sentiment_scores.csv") %>%
+    mutate(date = lubridate::date(date))
+
+# load sentiment dictionaries once at launch so they don't have to reload with each speech
+nrc <- get_sentiments("nrc")
+afinn <- get_sentiments("afinn")
 
 
-# ---- PRELIMINARIES ----
+# ---- SCRAPE LINKS TO SPEECHES ----
 
 # scrape links to pages with links to speeches, organized by year
 year_links <- read_html("https://www.federalreserve.gov/newsevents/speeches.htm") %>%
@@ -61,15 +72,6 @@ speech_ids <- gsub("\\.htm", "", speech_ids)
 speech_ids <- paste(str_to_title(str_extract(speech_ids, "[a-z]{3,}")), ymd(str_extract(speech_ids, "[0-9]{8}")))
 names(speech_links) <- speech_ids
 # note that a few urls don't follow the pattern of namedate, so this process returns a few labels of "NA NA"
-
-# load sentiment dictionaries once at launch so they don't have to get reloaded with each speech selection later,
-# then add columns for color conditional on sentiment value (+/-)
-nrc <- get_sentiments("nrc")
-nrc_sentiments <- nrc %>%
-    filter(sentiment == "negative" | sentiment == "positive") %>%
-    mutate(color = recode(sentiment, positive = "Aqua", negative = "Yellow"))
-afinn <- get_sentiments("afinn")
-afinn_sentiments <- mutate(afinn, color = ifelse(value < 0, "Yellow", "Aqua"))
 
 
 # --- UI ----
@@ -128,12 +130,11 @@ ui <- navbarPage(inverse = TRUE, windowTitle = "Fedspeak",
                           "and ",
                           a(href = "https://saifmohammad.com/WebPages/NRC-Emotion-Lexicon.htm", "NRC"), 
                           "lexicons."),
-                        p("The plots on the top show the distribution of words in the document relative to each lexicon,
-                          NRC emotions on the left and AFINN sentiment scores on the right."),
-                        p("The plots on the bottom use standardized scores to show how this document
-                          compares to the historical corpus on six emotions. The red line marks the standardized 
-                          score for the selected document; the black line shows the historical average;
-                          and the histogram underneath shows the full distribution of historical scores."),
+                        p("The plots on the top use standardized scores to show how the selected speech compares to 
+                          all speeches from 2006 to early 2020 on six emotions. Zero is average, and higher scores
+                          indicate stronger emotion."),
+                        p("The plots on the bottom show the distribution of words in the selected speech relative to
+                          each lexicon: NRC emotions on the left, AFINN sentiment scores on the right."),
                         style = "font-family: verdana;")
 
                 ),
@@ -175,12 +176,11 @@ ui <- navbarPage(inverse = TRUE, windowTitle = "Fedspeak",
 
                 mainPanel(
 
-                    # use negative margins to reduce whitespace between plot and navbar and then between plots
-                    div(style = "margin-top: -5em; margin-bottom: 0em",
+                    div(style = "margin-top: -6em; margin-bottom: 0em",
                         fluidRow(column = 8, plotOutput("topic_gauge_plot"))
                     ),
 
-                    div(style = "margin-top:-5em",
+                    div(style = "margin-top:-7em",
                         fluidRow(column = 8, plotOutput("topic_term_plot"))
                     )
 
@@ -254,7 +254,7 @@ ui <- navbarPage(inverse = TRUE, windowTitle = "Fedspeak",
 
 # ---- SERVER ----
 
-server <- function(input, output) {
+server <- function(input, output, session) {
 
     # helper function to scrape a single speech
     speech_scraper <- function(url) {
@@ -329,7 +329,7 @@ server <- function(input, output) {
     # TAB 2: SENTIMENT SCOREBOARD ----
 
     # plot the sentiment scores and top words
-    output$sentiment_plot_composite <- renderPlot({
+    sentiment_plot <- eventReactive(input$speech, {
 
         # create tidy data frame with one word per row and no stop words
         speech_tidy <- speech() %>%
@@ -389,59 +389,91 @@ server <- function(input, output) {
         emotions <- c("fear", "sadness", "anger", "anticipation", "trust", "joy")
 
         # make named list of standardized emotion scores to use in gauge plots
-        emotion_z_scores <- lapply(emotions, function(x) {
+        emotion_z_scores <- sapply(emotions, function(x) {
 
             raw_score <- unlist(feels_nrc[['emotions']][feels_nrc[['emotions']]$sentiment == x, "share"])
 
-            mean <- mean(fedspeak_df[,paste0("nrc_", x)], na.rm = TRUE); sd <- sd(fedspeak_df[,paste0("nrc_", x)], na.rm = TRUE)
+            mean <- mean(fedspeak_df[,paste0("nrc_", x)], na.rm = TRUE)
+            stddev <- sd(fedspeak_df[,paste0("nrc_", x)], na.rm = TRUE)
 
-            z_score <- (raw_score - mean) / sd
+            (raw_score - mean) / stddev
 
         })
 
         names(emotion_z_scores) <- emotions
 
-        # function to plot distribution of emotion scores from historical data table, fedspeak_df
-        plot_emotion_distribution <- function(emotion) {
+        # function to make a gauge plot with a label and z-score
+        # h/t https://stackoverflow.com/questions/24900903/how-to-draw-gauge-chart-in-r
+        gg_gauge <- function(emotion, pos) {
 
-            x <- sym(paste0("nrc_", emotion))
+            require(ggplot2)
 
-            fedspeak_df %>%
-                mutate(normalized_score = (!!x - mean(!!x, na.rm = TRUE))/sd(!!x, na.rm = TRUE)) %>%
-                ggplot(aes(normalized_score)) +
-                    geom_histogram(binwidth = 0.2, alpha = 1/4) +
-                    theme_minimal() +
-                    labs(title = emotion, x = "normalized score") + 
-                    xlim(-4,4) + ylim(0,100) +
-                    theme(plot.title = element_text(hjust = 0.5, size = 20),
-                          axis.title.y = element_blank()) +
-                    geom_vline(xintercept = 0, color = "black") +   # benchmark at 0
-                    geom_vline(xintercept = emotion_z_scores[[emotion]], color = "red", lwd = 1.25)
+            get.poly <- function(a, b, r1 = 0.5, r2 = 1.0) {
+                th.start <- pi*(1-a/100)
+                th.end <- pi*(1-b/100)
+                th <- seq(th.start,th.end,length=100)
+                x <- c(r1*cos(th),rev(r2*cos(th)))
+                y <- c(r1*sin(th),rev(r2*sin(th)))
+                return(data.frame(x,y))
+            }
+
+            # set breaks on 0-100 scale to correspond to -2.5,-2,-1,0,1,2,2.5 for z-scores
+            breaks <- c(0, 10, 30, 50, 70, 90, 100)
+
+            # make version of position indicator that tops or bottoms out at edge of gauge
+            pos_ltd <- (pos + 2.5) * 20  # rescale to get -2.5/2.5 range to 0-100
+            if(pos < -2.5) { pos_ltd <- 0 }
+            if(pos > 2.5) { pos_ltd <- 100 }
+
+            # uses zissou palette from wesanderson, but with gray in middle; writing it out to minimize dependencies
+            p <- ggplot()+ 
+                geom_polygon(data=get.poly(breaks[1], breaks[2]), aes(x,y), fill="#3B9AB2", alpha = 1/3) +
+                geom_polygon(data=get.poly(breaks[2], breaks[3]), aes(x,y), fill="#78B7C5", alpha = 1/3) +
+                geom_polygon(data=get.poly(breaks[3], breaks[4]), aes(x,y), fill="gray90", alpha = 1/3) +
+                geom_polygon(data=get.poly(breaks[4], breaks[5]), aes(x,y), fill="gray90", alpha = 1/3) +
+                geom_polygon(data=get.poly(breaks[5], breaks[6]), aes(x,y), fill="#E1AF00", alpha = 1/3) +
+                geom_polygon(data=get.poly(breaks[6], breaks[7]), aes(x,y), fill="#F21A00", alpha = 1/3) +
+                # this bit makes the needle; tweak the 1st 2 parts of get.poly to widen or narrow it
+                geom_polygon(data=get.poly(pos_ltd - 1, pos_ltd + 1, 0.2), aes(x,y)) +
+                geom_text(data=as.data.frame(breaks[2:6]), size=4, vjust=0,
+                          aes(x = 1.1*cos(pi*(1-breaks[2:6]/100)), y = 1.1*sin(pi*(1-breaks[2:6]/100)), label = c(-2,-1,0,1,2))) +
+                # need the ggplot2:: in next 2 lines b/c function is masked by another package; took maybe 3 hrs to get this
+                ggplot2::annotate("text", x = 0, y = 0, label = round(pos, 1), vjust = 0, size = 5, fontface = "bold") +
+                ggplot2::annotate("text", x = 0, y = -1/2, label = emotion, vjust = 0, size = 7, fontface = "bold") +
+                coord_fixed()+
+                theme_bw()+
+                theme(axis.text=element_blank(),
+                      axis.title=element_blank(),
+                      axis.ticks=element_blank(),
+                      panel.grid=element_blank(),
+                      panel.border=element_blank()) 
+
+            return(p)
 
         }
 
-        emotion_plot_list <- map(emotions, plot_emotion_distribution)
+        emotion_plot_list <- map(seq_along(emotions), ~ gg_gauge(emotion = emotions[.], pos = emotion_z_scores[.]))
 
         names(emotion_plot_list) <- emotions
 
-
-
         print(
 
-            ( plot_nrc_col | plot_afinn_col ) /
             (emotion_plot_list[['fear']] | emotion_plot_list[['anger']] | emotion_plot_list[['sadness']] |
-                 emotion_plot_list[['anticipation']] | emotion_plot_list[['trust']] | emotion_plot_list[['joy']]) 
+                 emotion_plot_list[['anticipation']] | emotion_plot_list[['trust']] | emotion_plot_list[['joy']]) /
+            ( plot_nrc_col | plot_afinn_col )
 
         )
 
     })
+
+    output$sentiment_plot_composite <- renderCachedPlot( sentiment_plot(), cacheKeyExpr = { input$speech } )
 
     # TAB 3: TOPIC MODELING ----
 
     # get custom color palette from wesanderson
     my_pal <- wes_palette("FantasticFox1")[2:5]
 
-    output$topic_gauge_plot <- renderPlot({
+    topic_gauges <- eventReactive(input$speech, {
 
         # first step is to make a DocumentTermMatrix for the text to be classified; recycling this code
         # from process i used to fit topic models so the structure matches
@@ -457,7 +489,7 @@ server <- function(input, output) {
         speech_dtm <- DocumentTermMatrix(speech_corpus)
 
         # now we apply the fitted topic models to that dtm
-        speech_probs <- topicmodels::posterior(fed_lda[[2]], speech_dtm)$topics
+        speech_probs <- topicmodels::posterior(fed_lda, speech_dtm)$topics
         
         # now make a data frame to use for gauge plot;
         # h/t https://pomvlad.blog/2018/05/03/gauges-ggplot2/
@@ -487,9 +519,11 @@ server <- function(input, output) {
 
     })
 
+    output$topic_gauge_plot <- renderCachedPlot( topic_gauges(), cacheKeyExpr = { input$speech } )
+
     output$topic_term_plot <- renderPlot({
 
-        fed_top_terms[[2]] %>%
+        fed_top_terms %>%
             mutate(term = reorder_within(term, beta, topic)) %>%
             ggplot(aes(term, beta, fill = factor(topic))) +
                 geom_col(show.legend = FALSE) +
