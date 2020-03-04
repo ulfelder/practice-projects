@@ -3,8 +3,8 @@
 # in their public speaking, and 2) as a way to learn about how some common NLP rountines work, especially
 # sentiment analysis.
 
-library(tidyverse)
 library(shiny)
+library(tidyverse)
 library(lubridate)
 library(rvest)
 library(tidytext)
@@ -427,6 +427,7 @@ server <- function(input, output, session) {
 
             # uses zissou palette from wesanderson, but with gray in middle; writing it out to minimize dependencies
             p <- ggplot()+ 
+                ylim(-1,1.25) +  # need this to prevent annotations from getting cut off
                 geom_polygon(data=get.poly(breaks[1], breaks[2]), aes(x,y), fill="#3B9AB2", alpha = 1/3) +
                 geom_polygon(data=get.poly(breaks[2], breaks[3]), aes(x,y), fill="#78B7C5", alpha = 1/3) +
                 geom_polygon(data=get.poly(breaks[3], breaks[4]), aes(x,y), fill="gray90", alpha = 1/3) +
