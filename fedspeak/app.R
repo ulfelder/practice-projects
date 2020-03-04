@@ -26,9 +26,8 @@ load("data/fedspeak-topic-models.RData")
 fedspeak_df <- read.csv("data/fed_speeches_and_sentiment_scores.csv") %>%
     mutate(date = lubridate::date(date))
 
-# load sentiment dictionaries once at launch so they don't have to reload with each speech
-nrc <- get_sentiments("nrc")
-afinn <- get_sentiments("afinn")
+# load sentiment lexicons, stored locally so they don't have to get fetched each time
+load("data/sentiment-lexicons.RData")
 
 
 # ---- SCRAPE LINKS TO SPEECHES ----
