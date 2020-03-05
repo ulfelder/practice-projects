@@ -1,15 +1,13 @@
+library(shiny)
 library(tidyverse)
 library(lubridate)
-library(shiny)
-library(leaflet)
-library(fitdistrplus)
 library(rvest)
-library(bbmle)
+library(patchwork)
+library(leaflet)
 
 options(stringsAsFactors = FALSE)
-set.seed(20912)
 
-## DATA PULLING AND CLEANING
+## --- DATA PULLING AND PROCESSING ----
 
 # https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series
 
@@ -46,84 +44,26 @@ national <- full %>%
     group_by(Country.Region, date) %>%
     summarize_at(vars(starts_with("n_")), sum)
 
+national_change <- national %>%
+    mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
+    slice(-1)
+
 global <- full %>%
     group_by(date) %>%
     summarize_at(vars(starts_with("n_")), sum)
 
-# Estimating case fatality ratio (CFR) of COVID-19
-# Christian L. Althaus, 19 February 2020
-# https://github.com/calthaus/ncov-cfr
+global_change <- global %>%
+    mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
+    slice(-1)    
 
-# Estimating distribution from onset of symptoms to death
-# Linton et al. (https://doi.org/10.3390/jcm9020538)
-linton <- read.csv("https://raw.githubusercontent.com/calthaus/ncov-cfr/master/data/linton_supp_tableS1_S2_8Feb2020.csv")
-linton <- dmy(linton$Death) - dmy(linton$Onset)
-linton <- as.numeric(na.omit(linton))
-fit_linton <- fitdist(linton, "gamma")
+global_sans_china <- full %>%
+    filter(Country.Region != "China (mainland)") %>%
+    group_by(date) %>%
+    summarize_at(vars(starts_with("n_")), sum)
 
-linton_df <- data.frame(days = seq(50), prob_density = dgamma(seq(50), coef(fit_linton)[[1]], coef(fit_linton)[[2]]))
-linton_mean <- coef(fit_linton)[[1]]/coef(fit_linton)[[2]]
-linton_median <- qgamma(0.5, coef(fit_linton)[[1]], coef(fit_linton)[[2]])
-
-# NOT RUN: plot of distribution of estimated times from onset of symptoms to death
-# ggplot(linton_df, aes(x = days, y = prob_density)) +
-#     geom_density(stat = "identity", fill = "indianred", alpha = 0.5) +
-#     theme_minimal() +
-#     labs(title = "Probability distribution of esimtated time from onset of symptoms to death",
-#          caption = "Analysis by Christian Althaus. See: https://github.com/calthaus/ncov-cfr",
-#          x = "time from onset to death (days)", y = "probability density") +
-#     geom_segment(x = linton_mean, xend = linton_mean, y = 0, yend = ceiling(max(df$prob_density))) +
-#     annotate("text", x = linton_mean + 1, y = max(df$prob_density), hjust = 0, label = sprintf("mean = %s", round(linton_mean, 2)))
-
-# Likelihood and expected mortality helper function
-nll <- function(cfr, death_shape, death_rate) {
-    cfr <- plogis(cfr)
-    expected <- numeric(n_days)
-    for(i in days) {
-        for(j in 1:n_cases) {
-            d <- i - onset[j]
-            if(d >= 0) {
-                expected[i] <- expected[i] + cfr*diff(pgamma(c(d - 0.5, d + 0.5), shape = death_shape, rate = death_rate))
-            }
-        }
-    }
-    ll <- sum(dpois(deaths, expected, log = TRUE))
-    return(-ll)
-}
-
-# Analyze observed COVID-19 cases outside China
-# Source: WHO, ECDC and international media
-
-# scrape links to data sets in Althaus's repo
-datlinks <- read_html("https://github.com/calthaus/ncov-cfr/tree/master/data") %>%
-    html_nodes(".js-navigation-open") %>%
-    html_attr("title") %>%
-    grep("^ncov_cases_", ., value = TRUE)
-
-# here's what we'd do if we wanted all the daily updates, not just the latest
-# casedat <- map(datlinks, ~ read.csv(sprintf("https://raw.githubusercontent.com/calthaus/ncov-cfr/master/data/%s", .))) %>%
-#     map( ~ mutate(., date = date(date)))
-
-# fetch and munge latest data from Althaus's repo
-last_link <- datlinks[length(datlinks)]
-export <- read.csv(sprintf("https://raw.githubusercontent.com/calthaus/ncov-cfr/master/data/%s", last_link), stringsAsFactors = FALSE)
-begin <- date(dplyr::first(export$date))
-cases <- export$cases
-deaths <- export$deaths
-n_cases <- sum(cases)
-n_deaths <- sum(deaths)
-n_days <- length(cases)
-days <- seq(n_days)
-interval <- seq(1, n_days + 7, 7)
-onset <- rep(days, cases)
-# fit the model
-free <- c(cfr = 0)
-fixed <- c(death_shape = coef(fit_linton)[[1]], death_rate = coef(fit_linton)[[2]])
-fit <- mle2(nll, start = as.list(free), fixed = as.list(fixed), method = "Brent", lower = -100, upper = 100)
-cfr_est <- round(100 * plogis(coef(fit)[1]), 1)
-cfr_ci <- round(100 * plogis(confint(fit)), 1)
-# simulations for plotting
-cfr_simulations <- sort(plogis(rnorm(10000, mean = coef(fit)[1], sd = sqrt(vcov(fit)))))
+global_sans_china_change <- global_sans_china %>%
+    mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
+    slice(-1) 
 
 # get links to WHO situation reports and give them pubdates as names
 sitreps <- read_html("https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports/") %>%
@@ -133,16 +73,14 @@ sitreps <- read_html("https://www.who.int/emergencies/diseases/novel-coronavirus
     sprintf("https://www.who.int%s", .) %>%
     unique(.)
 
-sitrep_dates <- sitreps %>%
-    str_extract("[0-9]{8}") %>%
-    ymd()
+sitrep_dates <- sitreps %>% str_extract("[0-9]{8}") %>% ymd()
 
 names(sitreps) <- sitrep_dates
 
 
-## USER INTERFACE
+# ---- USER INTERFACE ----
 
-ui <- fluidPage(
+ui <- shinyUI(fluidPage(
 
     # Application title
     titlePanel("Tracking COVID-19"),
@@ -153,35 +91,79 @@ ui <- fluidPage(
 
             tabPanel("Global trend",
 
-                br(),
+                fluidPage(
 
-                plotOutput("plot_global", width = "100%", height = "400px")
+                    fluidRow(
+
+                         column(width = 3,
+
+                             radioButtons("china",
+                                          label = "",
+                                          choices = c("including China", "excluding China"),
+                                          selected = "including China")
+
+                         ),
+
+                         column(width = 3,
+  
+                             radioButtons("trendtype",
+                                           label = "",
+                                           choices = c("cumulative count", "new cases"),
+                                           selected = "cumulative count")
+
+                         )
+
+                    ),
+
+                    fluidRow(
+
+                        plotOutput("plot_global", width = "100%", height = "350px")
+
+                    )
+
+                )
 
             ),
 
             tabPanel("Trend by country",
 
-                selectInput("country",
-                            label = "",
-                            choices = sort(unique(national$Country.Region)),
-                            selected = "China (mainland)",
-                            width = "200px"),
+                fluidPage(
 
-                plotOutput("plot_national", width = "100%", height = "350px")
+                    fluidRow(
+
+                        column(width = 3,
+                   
+                            selectInput("country",
+                                        label = "",
+                                        choices = sort(unique(national$Country.Region)),
+                                        selected = "China (mainland)"),
+
+                        ),
+
+                        column(width = 3,
+  
+                            radioButtons("metric",
+                                         label = "",
+                                         choices = c("cumulative count", "new cases"),
+                                         selected = "cumulative count")
+
+                        )
+
+                    ),
+
+                    fluidRow(
+
+                        plotOutput("plot_national", width = "100%", height = "350px")
+
+                    )
+
+                )
 
             ),
 
             tabPanel("World map",
 
                 leafletOutput("map_global", width = "100%", height = "500px")
-
-            ),
-
-            tabPanel("Case fatality rate",
-
-                br(),
-
-                plotOutput("plot_cfr", width = "80%", height = "400px")
 
             ),
 
@@ -195,13 +177,32 @@ ui <- fluidPage(
                      
                 htmlOutput("frame")
 
+            ),
+
+            tabPanel("About",
+
+                fluidPage(
+
+                    br(),
+
+                    div(p(strong("Creator:"), a(href = "https://github.com/ulfelder", "Jay Ulfelder")), 
+                        p(strong("R Packages:"), "shiny, tidyverse, lubridate, patchwork,  leaflet"),
+                        p(strong("Data Source:"), a("Johns Hopkins University CSEE", href = "https://github.com/CSSEGISandData/COVID-19")),
+                        br(),
+                        p("On the world map, the area of the circles is proportionate to the counts (the radius is the
+                          square root of the count divided by pi), and the counts of deaths and recovered cases are nested
+                          in the count of confirmed cases."),
+                        style = "font-family: courier;")
+
+                )
+
             )
 
         )
 
     )
 
-)
+))
 
                
 ## SERVER LOGIC
@@ -210,26 +211,89 @@ server <- function(input, output) {
 
     output$plot_global <- renderPlot({
 
-        global %>%
-            # recompute confirmed as net of deaths and recovered for stacked plotting
-            mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
-            pivot_longer(-date, names_to = "casetype", values_to = "n") %>%
-            mutate(casetype = gsub("n_", "", casetype)) %>%
-            ggplot(aes(x = date, y = n, fill = casetype)) +
-                geom_col(alpha = 2/3) +
-                theme_minimal() +
-                scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
-                labs(title = sprintf("Cumulative daily count of COVID-19 cases worldwide as of %s", max(global$date)),
-                     caption = "Data source: JHU CSEE") +
-                theme(axis.title.x = element_blank(),
-                      axis.title.y = element_blank(),
-                      legend.position = "bottom")
+        if(input$china == "including China" & input$trendtype == "cumulative count") {
+
+            global %>%
+                # recompute confirmed as net of deaths and recovered for stacked plotting
+                mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
+                pivot_longer(-date, names_to = "casetype", values_to = "n") %>%
+                mutate(casetype = gsub("n_", "", casetype)) %>%
+                ggplot(aes(x = date, y = n, fill = casetype)) +
+                    geom_col(alpha = 2/3) +
+                    theme_minimal() +
+                    scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
+                    labs(caption = "Data source: JHU CSEE") +
+                    theme(axis.title.x = element_blank(),
+                          axis.title.y = element_blank(),
+                          legend.position = "bottom")
+
+        } else if (input$china == "excluding China" & input$trendtype == "cumulative count") {
+
+            global_sans_china %>%
+                # recompute confirmed as net of deaths and recovered for stacked plotting
+                mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
+                pivot_longer(-date, names_to = "casetype", values_to = "n") %>%
+                mutate(casetype = gsub("n_", "", casetype)) %>%
+                ggplot(aes(x = date, y = n, fill = casetype)) +
+                    geom_col(alpha = 2/3) +
+                    theme_minimal() +
+                    scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
+                    labs(caption = "Data source: JHU CSEE") +
+                    theme(axis.title.x = element_blank(),
+                          axis.title.y = element_blank(),
+                          legend.position = "bottom")
+
+        } else if (input$china == "including China" & input$trendtype == "new cases") {
+
+            new_confirmed <- global_change %>%
+                ggplot(aes(x = date, y = n_confirmed)) +
+                    geom_col(alpha = 2/3, fill = "gray75") +
+                    theme_minimal() +
+                    labs(title = "New confirmed cases",
+                         caption = "Data source: JHU CSEE") +
+                    theme(axis.title.x = element_blank(),
+                          axis.title.y = element_blank())
+
+            new_deaths <- global_change %>%
+                ggplot(aes(x = date, y = n_deaths)) +
+                    geom_col(alpha = 2/3, fill = "red") +
+                    theme_minimal() +
+                    labs(title = "New deaths",
+                         caption = "Data source: JHU CSEE") +
+                    theme(axis.title.x = element_blank(),
+                          axis.title.y = element_blank())
+
+            new_confirmed / new_deaths
+
+        } else {
+
+            new_confirmed <- global_sans_china_change %>%
+                ggplot(aes(x = date, y = n_confirmed)) +
+                    geom_col(alpha = 2/3, fill = "gray75") +
+                    theme_minimal() +
+                    labs(title = "New confirmed cases",
+                         caption = "Data source: JHU CSEE") +
+                    theme(axis.title.x = element_blank(),
+                          axis.title.y = element_blank())
+
+            new_deaths <- global_sans_china_change %>%
+                ggplot(aes(x = date, y = n_deaths)) +
+                    geom_col(alpha = 2/3, fill = "red") +
+                    theme_minimal() +
+                    labs(title = "New deaths",
+                         caption = "Data source: JHU CSEE") +
+                    theme(axis.title.x = element_blank(),
+                          axis.title.y = element_blank())
+
+            new_confirmed / new_deaths
+
+        }
 
     })
 
     output$plot_national <- renderPlot({
 
-        national %>%
+        cumulative <- national %>%
             mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
             pivot_longer(n_confirmed:n_recovered, names_to = "casetype", values_to = "n") %>%
             filter(Country.Region == input$country) %>%
@@ -238,11 +302,34 @@ server <- function(input, output) {
                 geom_col(alpha = 2/3) +
                 theme_minimal() +
                 scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
-                labs(title = "Cumulative daily count of COVID-19 cases",
-                     caption = "Data source: JHU CSEE") +
+                labs(caption = "Data source: JHU CSEE") +
                 theme(axis.title.x = element_blank(),
                       axis.title.y = element_blank(),
                       legend.position = "bottom")
+
+        new_confirmed <- national_change %>%
+            filter(Country.Region == input$country) %>%
+            ggplot(aes(x = date, y = n_confirmed)) +
+                geom_col(alpha = 2/3, fill = "gray75") +
+                theme_minimal() +
+                labs(title = "New confirmed cases",
+                     caption = "Data source: JHU CSEE") +
+                theme(axis.title.x = element_blank(),
+                      axis.title.y = element_blank())
+
+        new_deaths <- national_change %>%
+            filter(Country.Region == input$country) %>%
+            ggplot(aes(x = date, y = n_deaths)) +
+                geom_col(alpha = 2/3, fill = "red") +
+                theme_minimal() +
+                labs(title = "New deaths",
+                     caption = "Data source: JHU CSEE") +
+                theme(axis.title.x = element_blank(),
+                      axis.title.y = element_blank())
+
+        if (input$metric == "cumulative count") { print(cumulative) }
+
+        else { print( new_confirmed / new_deaths ) }
 
     })
 
@@ -271,20 +358,6 @@ server <- function(input, output) {
             addLegend(position = "bottomright",
                       colors = c("gray75", "dodgerblue", "red"), opacity = 1/10,
                       labels = c("confirmed", "recovered", "deaths"))
-
-    })
-
-    output$plot_cfr <- renderPlot({
-
-        ggplot(as.data.frame(cfr_simulations), aes(x = cfr_simulations)) +
-            geom_histogram(fill = "firebrick1", color = "firebrick1", binwidth = 0.01) + 
-            theme_minimal() +
-            labs(title = sprintf("Distribution of simulated case fatality rate (CFR) estimates as of %s", max(export$date)),
-                 subtitle = sprintf("Estimated CFR outside China: %s%% (95%% CI bounds: %s%%, %s%%)", cfr_est, cfr_ci[1], cfr_ci[2]),
-                 x = "simulated rate", y = "share of simulations",
-            caption = "Following Althaus; see https://github.com/calthaus/ncov-cfr") +
-            scale_y_continuous(breaks = seq(0,3000,1000), labels = c("0", "0.10", "0.20", "0.30")) +
-            theme(axis.title.x = element_blank())
 
     })
 
