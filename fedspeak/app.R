@@ -138,7 +138,7 @@ ui <- navbarPage(inverse = TRUE, windowTitle = "Fedspeak",
 
                 mainPanel(
 
-                    plotOutput("sentiment_plot_composite")
+                    plotOutput("sentiment_plot_composite", height = "550px")
 
                 )
 
@@ -334,6 +334,24 @@ server <- function(input, output, session) {
             unnest_tokens(word, text) %>%
             anti_join(stop_words)
 
+        # plot of 15 most frequent terms, stemmed for proper comparison
+        plot_word_freq <- speech_tidy %>%
+            mutate(word = unlist(corpus::text_tokens(word, stemmer = "en"))) %>%
+            count(word, sort = TRUE) %>%
+            # get rid of numbers
+            filter(grepl("\\D", word)) %>%
+            # chuck some uninteresting words
+            filter(!(word %in% c("feder", "reserv", "u."))) %>%
+            # need this to avoid alphabetical reordering of words when plotting
+            mutate(word = reorder(word, n)) %>%
+            slice(1:15) %>%
+            ggplot(aes(word, n)) +
+                geom_col(fill = "gray75", alpha = 1/2) +
+                theme_minimal() +
+                labs(title = "15 most common terms", y = "count") +
+                xlab(NULL) +
+                coord_flip()
+
         # sentiment score (afinn) to use as annotation in next plot
         feels_afinn <- inner_join(speech_tidy, afinn) %>%
             summarize(mean = mean(value)) %>%
@@ -458,7 +476,7 @@ server <- function(input, output, session) {
 
             (emotion_plot_list[['fear']] | emotion_plot_list[['anger']] | emotion_plot_list[['sadness']] |
                  emotion_plot_list[['anticipation']] | emotion_plot_list[['trust']] | emotion_plot_list[['joy']]) /
-            ( plot_nrc_col | plot_afinn_col )
+            ( plot_word_freq | ( plot_nrc_col / plot_afinn_col ))
 
         )
 
