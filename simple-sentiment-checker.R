@@ -3,12 +3,15 @@
 library(shiny)
 library(tidyverse)
 library(tidytext)
+library(rvest)
 
 nrc <- get_sentiments("nrc")
 
 nrc_sentiments <- nrc %>%
     filter(sentiment == "negative" | sentiment == "positive") %>%
     mutate(color = recode(sentiment, positive = "Aqua", negative = "Yellow"))
+
+# ---- UI ----
 
 ui <- mainPanel(    
 
@@ -38,19 +41,23 @@ server <- function(input, output) {
     
         bag_of_words <- strsplit(input$usertext, " ")[[1]]
     
-        lapply(bag_of_words, function(x) {
+        tag_list <- lapply(bag_of_words, function(x) {
       
-            col <- NULL
+            col <- "White"
       
-            if (tolower(x) %in% nrc_sentiments$word) {
+            y <- tolower(gsub("[[:punct:] ]+", "", x))
+
+            if (y %in% nrc_sentiments$word) {
         
-                col <- nrc_sentiments$color[which(nrc_sentiments$word == x)]
+                col <- nrc_sentiments$color[which(nrc_sentiments$word == y)]
         
             }
       
             tags$span(style = paste("background-color:", col), x)
       
         })
+
+        tagList(tag_list)
     
     }) 
 
@@ -64,7 +71,15 @@ server <- function(input, output) {
 
         neg <- sum(bag_of_words %in% nrc_sentiments$word[nrc_sentiments$sentiment == "negative"])
 
-        sprintf("Net score: %s %s", ifelse(pos > neg, "+", ifelse(neg > pos, "-", "")), round((pos - neg)/n, 2))
+        if(n >= 1) {
+
+            sprintf("Net score: %s %s", ifelse(pos > neg, "+", ifelse(neg > pos, "-", "")), round((pos - neg)/n, 2))
+
+        } else {
+
+            "Not enough information to compute."
+
+        }
 
     })
 
