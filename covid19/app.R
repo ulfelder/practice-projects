@@ -37,8 +37,8 @@ recovered <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19
 
 full <- Reduce(function(...) merge(..., all = TRUE), list(confirmed, deaths, recovered))
 
-# relabel this one so it's easier to find when alphabetized
-full$Country.Region[full$Country.Region == "Mainland China"] <- "China (mainland)"
+# deprecated: relabel this one so it's easier to find when alphabetized
+# full$Country.Region[full$Country.Region == "Mainland China"] <- "China (mainland)"
 
 national <- full %>%
   group_by(Country.Region, date) %>%
@@ -57,7 +57,7 @@ global_change <- global %>%
   slice(-1)    
 
 global_sans_china <- full %>%
-  filter(Country.Region != "China (mainland)") %>%
+  filter(Country.Region != "China") %>%
   group_by(date) %>%
   summarize_at(vars(starts_with("n_")), sum)
 
@@ -207,7 +207,7 @@ ui <- shinyUI(fluidPage(
 
 ## SERVER LOGIC
 
-server <- function(input, output) {
+server <- function(input, output, session) {
   
   output$plot_global <- renderPlot({
     
