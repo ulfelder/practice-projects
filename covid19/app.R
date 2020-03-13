@@ -396,8 +396,8 @@ server <- function(input, output, session) {
                 mode = "lines",
                 hoverinfo = "text",
                 text = ~hover_label, 
-                color = "darkred",
-                alpha = 2/3) %>%
+                color = I("red"),
+                alpha = 1/3) %>%
       layout(title = "Reported infection rates after 100th case, excluding China",
              xaxis = list(title = "days since 100th confirmed case"),
              yaxis = list(title = "confirmed cases per 100K population"))
