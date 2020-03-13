@@ -4,6 +4,8 @@ library(lubridate)
 library(rvest)
 library(patchwork)
 library(leaflet)
+library(countrycode)
+library(plotly)
 
 options(stringsAsFactors = FALSE)
 
@@ -65,6 +67,14 @@ global_sans_china_change <- global_sans_china %>%
   mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
   slice(-1) 
 
+# get table of most recent population data for computing rates
+popdat <- world_bank_pop %>%
+  pivot_longer(cols = 3:ncol(.), names_to = "year", values_to = "population") %>%
+  mutate(year = as.numeric(year),
+         population = population/100000) %>%
+  filter(indicator == "SP.POP.TOTL" & year == "2017") %>%
+  select(iso3c = country, population)
+
 # get links to WHO situation reports and give them pubdates as names
 sitreps <- read_html("https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports/") %>%
   html_nodes("a") %>%
@@ -100,7 +110,7 @@ ui <- shinyUI(fluidPage(
                           radioButtons("china",
                                        label = "",
                                        choices = c("including China", "excluding China"),
-                                       selected = "including China")
+                                       selected = "excluding China")
                           
                    ),
                    
@@ -165,6 +175,14 @@ ui <- shinyUI(fluidPage(
                
                leafletOutput("map_global", width = "100%", height = "500px")
                
+      ),
+
+      tabPanel("Rate comparison",
+
+               br(),
+
+               plotlyOutput("plot_rate", width = "100%", height = "450px")
+
       ),
       
       tabPanel("WHO Situation Reports",
@@ -361,12 +379,37 @@ server <- function(input, output, session) {
     
   })
   
+  output$plot_rate <- renderPlotly({
+
+    national %>%
+      filter(Country.Region != "Cruise Ship" & Country.Region != "China") %>%
+      filter(n_confirmed >= 100) %>%
+      mutate(iso3c = countrycode(Country.Region, "country.name", "iso3c")) %>%
+      left_join(., popdat, by = "iso3c") %>%
+      select(Country.Region, date, rate = n_confirmed/population) %>%
+      group_by(Country.Region) %>%
+      mutate(days_since_100th_case = row_number()) %>%
+      mutate(hover_label = sprintf("%s: %s per 100k after %s days", Country.Region, rate, days_since_100th_case)) %>%
+      plot_ly(x = ~days_since_100th_case, y = ~rate) %>%
+      add_lines(name = "country",
+                type = "scatter",
+                mode = "lines",
+                hoverinfo = "text",
+                text = ~hover_label, 
+                color = "darkred",
+                alpha = 2/3) %>%
+      layout(title = "Reported infection rates after 100th case, excluding China",
+             xaxis = list(title = "days since 100th confirmed case"),
+             yaxis = list(title = "confirmed cases per 100K population"))
+
+  })
+
   output$frame <- renderUI({
     
     tags$iframe(style = "height:400px; width:100%; scrolling=yes", src = sitreps[input$sitrep_date])
     
   })
-  
+
 }
 
 ## RUN THE APP
