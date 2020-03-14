@@ -179,9 +179,27 @@ ui <- shinyUI(fluidPage(
 
       tabPanel("Rate comparison",
 
-               br(),
+               fluidPage(
 
-               plotlyOutput("plot_rate", width = "100%", height = "450px")
+                 br(),
+                 
+                 fluidRow(
+                   
+                   column(width = 2,
+                          
+                          radioButtons("ratetype", label = "", choices = c("log scale", "per capita"))
+                          
+                   ),
+
+                   column(width = 7,
+
+                     plotlyOutput("plot_rate", height = "400px")
+
+                   )
+                   
+                 )
+                 
+               )
 
       ),
       
@@ -381,26 +399,56 @@ server <- function(input, output, session) {
   
   output$plot_rate <- renderPlotly({
 
-    national %>%
-      filter(Country.Region != "Cruise Ship" & Country.Region != "China") %>%
-      filter(n_confirmed >= 100) %>%
-      mutate(iso3c = countrycode(Country.Region, "country.name", "iso3c")) %>%
-      left_join(., popdat, by = "iso3c") %>%
-      select(Country.Region, date, rate = n_confirmed/population) %>%
-      group_by(Country.Region) %>%
-      mutate(days_since_100th_case = row_number()) %>%
-      mutate(hover_label = sprintf("%s: %s per 100k after %s days", Country.Region, rate, days_since_100th_case)) %>%
-      plot_ly(x = ~days_since_100th_case, y = ~rate) %>%
-      add_lines(name = "country",
-                type = "scatter",
-                mode = "lines",
-                hoverinfo = "text",
-                text = ~hover_label, 
-                color = I("red"),
-                alpha = 1/3) %>%
-      layout(title = "Reported infection rates after 100th case, excluding China",
-             xaxis = list(title = "days since 100th confirmed case"),
-             yaxis = list(title = "confirmed cases per 100K population"))
+    if(input$ratetype == "per capita") {
+
+      national %>%
+        filter(Country.Region != "Cruise Ship" & Country.Region != "China") %>%
+        filter(n_confirmed >= 100) %>%
+        mutate(iso3c = countrycode(Country.Region, "country.name", "iso3c")) %>%
+        left_join(., popdat, by = "iso3c") %>%
+        select(Country.Region, date, rate = n_confirmed/population) %>%
+        group_by(Country.Region) %>%
+        mutate(days_since_100th_case = row_number()) %>%
+        mutate(hover_label = sprintf("%s: %s per 100k after %s days", Country.Region, rate, days_since_100th_case)) %>%
+        plot_ly(x = ~days_since_100th_case, y = ~rate) %>%
+        add_lines(name = "country",
+                  type = "scatter",
+                  mode = "lines",
+                  hoverinfo = "text",
+                  text = ~hover_label, 
+                  color = I("red"),
+                  alpha = 1/3) %>%
+        layout(title = "Infection rate by country (excluding China)",
+               xaxis = list(title = "days since 100th confirmed case"),
+               yaxis = list(title = "confirmed cases per 100,000 pop."))
+
+    } else {
+
+      national %>%
+        filter(Country.Region != "Cruise Ship" & Country.Region != "China") %>%
+        filter(n_confirmed >= 100) %>%
+        mutate(level = log10(n_confirmed)) %>%
+        select(Country.Region, date, level) %>%
+        group_by(Country.Region) %>%
+        mutate(days_since_100th_case = row_number()) %>%
+        mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, 10^level, days_since_100th_case)) %>%
+        plot_ly(x = ~days_since_100th_case,
+                y = ~level) %>%
+        add_lines(name = "country",
+                  type = "scatter",
+                  mode = "lines",
+                  hoverinfo = "text",
+                  text = ~hover_label, 
+                  color = I("red"),
+                  alpha = 1/3) %>%
+        layout(title = "Infection rate by country (excluding China)",
+               xaxis = list(title = "days since 100th confirmed case"),
+               yaxis = list(title = "confirmed cases (logged)", range = c(2,6)),
+               shapes = list(type = "line", line = list(color = I("gray90"), width = 1),
+                             x0 = 0, x1 = 1, xref = "paper",
+                             y0 = 0, y1 = 1, yref = "paper"))
+
+    }
 
   })
 
