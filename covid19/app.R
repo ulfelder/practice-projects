@@ -71,7 +71,7 @@ global_sans_china_change <- global_sans_china %>%
 popdat <- world_bank_pop %>%
   pivot_longer(cols = 3:ncol(.), names_to = "year", values_to = "population") %>%
   mutate(year = as.numeric(year),
-         population = population/100000) %>%
+         population = population/10000) %>%
   filter(indicator == "SP.POP.TOTL" & year == "2017") %>%
   select(iso3c = country, population)
 
@@ -185,13 +185,17 @@ ui <- shinyUI(fluidPage(
                  
                  fluidRow(
                    
-                   column(width = 2,
+                   column(width = 3,
                           
-                          radioButtons("ratetype", label = "", choices = c("log scale", "per capita"))
+                          radioButtons("ratetype", label = "", choices = c("log scale", "per capita")),
+
+                          br(),
+
+                          numericInput("growth_rate", label = "Exponential growth rate (r):", value = 0.3 , min = 0, max = 1, step = 0.1)        
                           
                    ),
 
-                   column(width = 7,
+                   column(width = 7, offset = 1,
 
                      plotlyOutput("plot_rate", height = "400px")
 
@@ -402,15 +406,17 @@ server <- function(input, output, session) {
     if(input$ratetype == "per capita") {
 
       national %>%
-        filter(Country.Region != "Cruise Ship" & Country.Region != "China") %>%
-        filter(n_confirmed >= 100) %>%
+        filter(Country.Region != "Cruise Ship") %>%
+        filter(n_confirmed >= 10) %>%
         mutate(iso3c = countrycode(Country.Region, "country.name", "iso3c")) %>%
         left_join(., popdat, by = "iso3c") %>%
-        select(Country.Region, date, rate = n_confirmed/population) %>%
+        filter(population > 100) %>%
+        mutate(rate = n_confirmed/population) %>%
+        select(Country.Region, date, rate) %>%
         group_by(Country.Region) %>%
-        mutate(days_since_100th_case = row_number()) %>%
-        mutate(hover_label = sprintf("%s: %s per 100k after %s days", Country.Region, rate, days_since_100th_case)) %>%
-        plot_ly(x = ~days_since_100th_case, y = ~rate) %>%
+        mutate(days = row_number()) %>%
+        mutate(hover_label = sprintf("%s: %s/10,000 after %s days", Country.Region, round(rate, 1), days)) %>%
+        plot_ly(x = ~days, y = ~rate) %>%
         add_lines(name = "country",
                   type = "scatter",
                   mode = "lines",
@@ -418,20 +424,22 @@ server <- function(input, output, session) {
                   text = ~hover_label, 
                   color = I("red"),
                   alpha = 1/3) %>%
-        layout(title = "Infection rate by country (excluding China)",
-               xaxis = list(title = "days since 100th confirmed case"),
-               yaxis = list(title = "confirmed cases per 100,000 pop."))
+        layout(title = "Infection rate by country (total pop. > 1 mil.)",
+               xaxis = list(title = "days since 10th confirmed case"),
+               yaxis = list(title = "confirmed cases per 10,000 pop."))
 
     } else {
 
-      national %>%
+      dat <- national %>%
         filter(Country.Region != "Cruise Ship" & Country.Region != "China") %>%
         filter(n_confirmed >= 100) %>%
         mutate(level = log10(n_confirmed)) %>%
         select(Country.Region, date, level) %>%
         group_by(Country.Region) %>%
         mutate(days_since_100th_case = row_number()) %>%
-        mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, 10^level, days_since_100th_case)) %>%
+        mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, 10^level, days_since_100th_case))
+
+      dat %>%  
         plot_ly(x = ~days_since_100th_case,
                 y = ~level) %>%
         add_lines(name = "country",
@@ -444,9 +452,10 @@ server <- function(input, output, session) {
         layout(title = "Infection rate by country (excluding China)",
                xaxis = list(title = "days since 100th confirmed case"),
                yaxis = list(title = "confirmed cases (logged)", range = c(2,6)),
-               shapes = list(type = "line", line = list(color = I("gray90"), width = 1),
-                             x0 = 0, x1 = 1, xref = "paper",
-                             y0 = 0, y1 = 1, yref = "paper"))
+               shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
+                             x0 = 0, x1 = max(dat$days_since_100th_case),
+                             y0 = 2, y1 = log10(100 * (1 + input$growth_rate)^max(dat$days_since_100th_case)),
+                             opacity = 1/3, layer = "below"))
 
     }
 
