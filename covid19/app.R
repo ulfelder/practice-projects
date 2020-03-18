@@ -65,7 +65,24 @@ global_sans_china <- full %>%
 
 global_sans_china_change <- global_sans_china %>%
   mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
-  slice(-1) 
+  slice(-1)
+
+state_names <- c(state.name, "District of Columbia")
+names(state_names) = c(state.abb, "DC")
+usa <- full %>%
+  filter(Country.Region == "US") %>%
+  separate(Province.State, into = c("locality", "state"), sep = ", ", fill = "left") %>%
+  mutate(state = str_trim(state)) %>%
+  mutate(state = ifelse(nchar(state) == 2, state_names[state], state)) %>%
+  mutate(state = ifelse(state == "D.C.", "District of Columbia", state)) %>%
+  filter(state %in% state_names) %>%
+  group_by(state, date) %>%
+  summarize_at(vars(starts_with("n_")), sum)
+names(state_names) = NULL
+
+usa_change <- usa %>%
+  mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
+  slice(-1)
 
 # get table of most recent population data for computing rates
 popdat <- world_bank_pop %>%
@@ -99,7 +116,7 @@ ui <- shinyUI(fluidPage(
     
     tabsetPanel(
       
-      tabPanel("Global trend",
+      tabPanel("Global",
                
                fluidPage(
                  
@@ -135,7 +152,7 @@ ui <- shinyUI(fluidPage(
                
       ),
       
-      tabPanel("Trend by country",
+      tabPanel("By country",
                
                fluidPage(
                  
@@ -170,6 +187,42 @@ ui <- shinyUI(fluidPage(
                )
                
       ),
+
+      tabPanel("By U.S. state",
+               
+               fluidPage(
+                 
+                 fluidRow(
+                   
+                   column(width = 3,
+                          
+                          selectInput("state",
+                                      label = "",
+                                      choices = state_names,
+                                      selected = "New York"),
+                          
+                   ),
+                   
+                   column(width = 3,
+                          
+                          radioButtons("metric_state",
+                                       label = "",
+                                       choices = c("cumulative count", "new cases"),
+                                       selected = "cumulative count")
+                          
+                   )
+                   
+                 ),
+                 
+                 fluidRow(
+                   
+                   plotOutput("plot_state", width = "100%", height = "350px")
+                   
+                 )
+                 
+               )
+               
+      ),
       
       tabPanel("World map",
                
@@ -177,7 +230,7 @@ ui <- shinyUI(fluidPage(
                
       ),
 
-      tabPanel("Rate comparison",
+      tabPanel("Growth rates",
 
                fluidPage(
 
@@ -372,7 +425,49 @@ server <- function(input, output, session) {
     else { print( new_confirmed / new_deaths ) }
     
   })
-  
+
+  output$plot_state <- renderPlot({
+    
+    cumulative <- usa %>%
+      mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
+      pivot_longer(n_confirmed:n_recovered, names_to = "casetype", values_to = "n") %>%
+      filter(state == input$state) %>%
+      mutate(casetype = gsub("n_", "", casetype)) %>%
+      ggplot(aes(x = date, y = n, fill = casetype)) +
+      geom_col(alpha = 2/3) +
+      theme_minimal() +
+      scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
+      labs(caption = "Data source: JHU CSEE") +
+      theme(axis.title.x = element_blank(),
+            axis.title.y = element_blank(),
+            legend.position = "bottom")
+    
+    new_confirmed <- usa_change %>%
+      filter(state == input$state) %>%
+      ggplot(aes(x = date, y = n_confirmed)) +
+      geom_col(alpha = 2/3, fill = "gray75") +
+      theme_minimal() +
+      labs(title = "New confirmed cases",
+           caption = "Data source: JHU CSEE") +
+      theme(axis.title.x = element_blank(),
+            axis.title.y = element_blank())
+    
+    new_deaths <- usa_change %>%
+      filter(state == input$state) %>%
+      ggplot(aes(x = date, y = n_deaths)) +
+      geom_col(alpha = 2/3, fill = "red") +
+      theme_minimal() +
+      labs(title = "New deaths",
+           caption = "Data source: JHU CSEE") +
+      theme(axis.title.x = element_blank(),
+            axis.title.y = element_blank())
+    
+    if (input$metric_state == "cumulative count") { print(cumulative) }
+    
+    else { print( new_confirmed / new_deaths ) }
+    
+  })
+
   output$map_global <- renderLeaflet({
     
     selected_date <- max(full$date)
