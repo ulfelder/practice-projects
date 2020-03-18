@@ -9,7 +9,9 @@ library(plotly)
 
 options(stringsAsFactors = FALSE)
 
-## --- DATA PULLING AND PROCESSING ----
+##################################################
+##                 DATA MUNGING                 ##
+##################################################
 
 # https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series
 
@@ -84,14 +86,6 @@ usa_change <- usa %>%
   mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
   slice(-1)
 
-# get table of most recent population data for computing rates
-popdat <- world_bank_pop %>%
-  pivot_longer(cols = 3:ncol(.), names_to = "year", values_to = "population") %>%
-  mutate(year = as.numeric(year),
-         population = population/10000) %>%
-  filter(indicator == "SP.POP.TOTL" & year == "2017") %>%
-  select(iso3c = country, population)
-
 # get links to WHO situation reports and give them pubdates as names
 sitreps <- read_html("https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports/") %>%
   html_nodes("a") %>%
@@ -104,12 +98,12 @@ sitrep_dates <- sitreps %>% str_extract("[0-9]{8}") %>% ymd()
 
 names(sitreps) <- sitrep_dates
 
-
-# ---- USER INTERFACE ----
+##################################################
+##                      UI                      ##
+##################################################
 
 ui <- shinyUI(fluidPage(
-  
-  # Application title
+
   titlePanel("Tracking COVID-19"),
   
   mainPanel(
@@ -118,176 +112,155 @@ ui <- shinyUI(fluidPage(
       
       tabPanel("Global",
                
-               fluidPage(
+        fluidPage(
                  
-                 fluidRow(
+          fluidRow(
                    
-                   column(width = 3,
-                          
-                          radioButtons("china",
-                                       label = "",
-                                       choices = c("including China", "excluding China"),
-                                       selected = "excluding China")
-                          
-                   ),
+            column(width = 3, 
+                   radioButtons("china",
+                                label = "",
+                                choices = c("including China", "excluding China"),
+                                selected = "excluding China")),
                    
-                   column(width = 3,
-                          
-                          radioButtons("trendtype",
-                                       label = "",
-                                       choices = c("cumulative count", "new cases"),
-                                       selected = "cumulative count")
-                          
-                   )
+            column(width = 3,
+                   radioButtons("trendtype",
+                                label = "",
+                                choices = c("cumulative count", "new cases"),
+                                selected = "cumulative count"))
                    
-                 ),
+          ),
                  
-                 fluidRow(
+          fluidRow(
                    
-                   plotOutput("plot_global", width = "100%", height = "350px")
+            plotOutput("plot_global", width = "100%", height = "350px")
                    
-                 )
+          )
                  
-               )
+        )
                
       ),
       
       tabPanel("By country",
                
-               fluidPage(
+        fluidPage(
                  
-                 fluidRow(
+          fluidRow(
                    
-                   column(width = 3,
-                          
-                          selectInput("country",
-                                      label = "",
-                                      choices = sort(unique(national$Country.Region)),
-                                      selected = "US"),
-                          
-                   ),
+            column(width = 3,
+                   selectInput("country",
+                               label = "",
+                               choices = sort(unique(national$Country.Region)),
+                               selected = "US")),
                    
-                   column(width = 3,
-                          
-                          radioButtons("metric",
-                                       label = "",
-                                       choices = c("cumulative count", "new cases"),
-                                       selected = "cumulative count")
-                          
-                   )
+            column(width = 3,
+                   radioButtons("metric",
+                                label = "",
+                                choices = c("cumulative count", "new cases"),
+                                selected = "cumulative count"))
                    
-                 ),
+          ),
                  
-                 fluidRow(
+          fluidRow(
                    
-                   plotOutput("plot_national", width = "100%", height = "350px")
+            plotOutput("plot_national", width = "100%", height = "350px")
                    
-                 )
+          )
                  
-               )
+        )
                
       ),
 
       tabPanel("By U.S. state",
                
-               fluidPage(
+        fluidPage(
                  
-                 fluidRow(
+          fluidRow(
                    
-                   column(width = 3,
-                          
-                          selectInput("state",
-                                      label = "",
-                                      choices = state_names,
-                                      selected = "New York"),
-                          
-                   ),
+            column(width = 3,
+                   selectInput("state",
+                               label = "",
+                               choices = state_names,
+                               selected = "New York")),
                    
-                   column(width = 3,
-                          
-                          radioButtons("metric_state",
-                                       label = "",
-                                       choices = c("cumulative count", "new cases"),
-                                       selected = "cumulative count")
-                          
-                   )
+            column(width = 3,
+                   radioButtons("metric_state",
+                                label = "",
+                                choices = c("cumulative count", "new cases"),
+                                selected = "cumulative count"))
                    
-                 ),
+          ),
                  
-                 fluidRow(
+          fluidRow(
                    
-                   plotOutput("plot_state", width = "100%", height = "350px")
+            plotOutput("plot_state", width = "100%", height = "350px")
                    
-                 )
+          )
                  
-               )
+        )
                
       ),
       
       tabPanel("World map",
                
-               leafletOutput("map_global", width = "100%", height = "500px")
+        leafletOutput("map_global", width = "100%", height = "500px")
                
       ),
 
       tabPanel("Growth rates",
 
-               fluidPage(
+        fluidPage(
 
-                 br(),
+           br(),
                  
-                 fluidRow(
+           fluidRow(                
+   
+             column(width = 3,
+               div(p("Double-click on a country name in the legend to see only that country's trace. 
+                     Single-click on a country name in the legend to remove that country's trace from 
+                     the plot (and click again to add it back). Hover on a line to see details for 
+                     that country at that point in time."),
+                   p("Use the selector below to set the benchmark growth rate (gray line) for comparison.")),
+               br(),
+               numericInput("growth_rate", label = "Growth rate:",
+                            value = 0.3 , min = 0, max = 1, step = 0.1)),
+
+             column(width = 9,
+               plotlyOutput("plot_rate", height = "450px"))
                    
-                   column(width = 3,
-                          
-                          radioButtons("ratetype", label = "", choices = c("log scale", "per capita")),
+           )
 
-                          br(),
-
-                          numericInput("growth_rate", label = "Exponential growth rate (r):", value = 0.3 , min = 0, max = 1, step = 0.1)        
-                          
-                   ),
-
-                   column(width = 7, offset = 1,
-
-                     plotlyOutput("plot_rate", height = "400px")
-
-                   )
-                   
-                 )
-                 
-               )
+        )
 
       ),
       
       tabPanel("WHO Situation Reports",
                
-               selectInput("sitrep_date",
-                           label = "",
-                           choices = sitrep_dates,
-                           selected = sitrep_dates[1],
-                           width = "200px"),
+        selectInput("sitrep_date",
+                    label = "",
+                    choices = sitrep_dates,
+                    selected = sitrep_dates[1],
+                    width = "200px"),
                
-               htmlOutput("frame")
+        htmlOutput("frame")
                
       ),
       
       tabPanel("About",
                
-               fluidPage(
+        fluidPage(
                  
-                 br(),
+          br(),
                  
-                 div(p(strong("Creator:"), a(href = "https://github.com/ulfelder", "Jay Ulfelder", target = "_blank")), 
-                     p(strong("R Packages:"), "shiny, tidyverse, lubridate, patchwork,  leaflet"),
-                     p(strong("Data Source:"), a("Johns Hopkins University CSEE", href = "https://github.com/CSSEGISandData/COVID-19", target = "_blank")),
-                     br(),
-                     p("On the world map, the area of the circles is proportionate to the counts (the radius is the
-                          square root of the count divided by pi), and the counts of deaths and recovered cases are nested
-                          in the count of confirmed cases."),
-                     style = "font-family: courier;")
+          div(p(strong("Creator:"), a(href = "https://github.com/ulfelder", "Jay Ulfelder", target = "_blank")), 
+              p(strong("R Packages:"), "shiny, tidyverse, lubridate, patchwork,  leaflet"),
+              p(strong("Data Source:"), a("Johns Hopkins University CSEE", href = "https://github.com/CSSEGISandData/COVID-19", target = "_blank")),
+              br(),
+              p("On the world map, the area of the circles is proportionate to the counts (the radius is the
+                square root of the count divided by pi), and the counts of deaths and recovered cases are nested
+                in the count of confirmed cases."),
+              style = "font-family: courier;")
                  
-               )
+        )
                
       )
       
@@ -498,61 +471,32 @@ server <- function(input, output, session) {
   
   output$plot_rate <- renderPlotly({
 
-    if(input$ratetype == "per capita") {
+    dat <- national %>%
+      filter(Country.Region != "Cruise Ship") %>%
+      filter(n_confirmed >= 100) %>%
+      mutate(level = log10(n_confirmed)) %>%
+      select(Country.Region, date, level) %>%
+      group_by(Country.Region) %>%
+      mutate(days_since_100th_case = row_number() - 1) %>%
+      mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, round(10^level, 0), days_since_100th_case))
 
-      national %>%
-        filter(Country.Region != "Cruise Ship") %>%
-        filter(n_confirmed >= 10) %>%
-        mutate(iso3c = countrycode(Country.Region, "country.name", "iso3c")) %>%
-        left_join(., popdat, by = "iso3c") %>%
-        filter(population > 100) %>%
-        mutate(rate = n_confirmed/population) %>%
-        select(Country.Region, date, rate) %>%
-        group_by(Country.Region) %>%
-        mutate(days = row_number()) %>%
-        mutate(hover_label = sprintf("%s: %s/10,000 after %s days", Country.Region, round(rate, 1), days)) %>%
-        plot_ly(x = ~days, y = ~rate) %>%
-        add_lines(name = "country",
-                  type = "scatter",
-                  mode = "lines",
-                  hoverinfo = "text",
-                  text = ~hover_label, 
-                  color = I("red"),
-                  alpha = 1/3) %>%
-        layout(title = "Infection rate by country (total pop. > 1 mil.)",
-               xaxis = list(title = "days since 10th confirmed case"),
-               yaxis = list(title = "confirmed cases per 10,000 pop."))
-
-    } else {
-
-      dat <- national %>%
-        filter(Country.Region != "Cruise Ship" & Country.Region != "China") %>%
-        filter(n_confirmed >= 100) %>%
-        mutate(level = log10(n_confirmed)) %>%
-        select(Country.Region, date, level) %>%
-        group_by(Country.Region) %>%
-        mutate(days_since_100th_case = row_number()) %>%
-        mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, 10^level, days_since_100th_case))
-
-      dat %>%  
-        plot_ly(x = ~days_since_100th_case,
-                y = ~level) %>%
-        add_lines(name = "country",
-                  type = "scatter",
-                  mode = "lines",
-                  hoverinfo = "text",
-                  text = ~hover_label, 
-                  color = I("red"),
-                  alpha = 1/3) %>%
-        layout(title = "Infection rate by country (excluding China)",
-               xaxis = list(title = "days since 100th confirmed case"),
-               yaxis = list(title = "confirmed cases (logged)", range = c(2,6)),
-               shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
-                             x0 = 0, x1 = max(dat$days_since_100th_case),
-                             y0 = 2, y1 = log10(100 * (1 + input$growth_rate)^max(dat$days_since_100th_case)),
-                             opacity = 1/3, layer = "below"))
-
+    p <- plot_ly(type = "scatter", mode = "lines")
+    countries <- sort(unique(dat$Country.Region))
+    for (i in countries) {
+      tmp <- filter(dat, Country.Region == i)
+      p <- p %>% add_lines(data = tmp, x = ~days_since_100th_case, y = ~level,
+                           hoverinfo = "text", text = ~hover_label,
+                           alpha = 1/2, name = i)
     }
+
+    p %>% 
+      layout(xaxis = list(title = "days since 100+ confirmed cases"),
+             yaxis = list(title = "confirmed cases (logged)", range = c(2,5)),
+             shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
+                           x0 = 0, x1 = max(dat$days_since_100th_case),
+                           y0 = 2, y1 = log10(100 * (1 + input$growth_rate)^max(dat$days_since_100th_case)),
+                           opacity = 1/3, layer = "below"),
+             legend = list(x = 100, y = 0.5))
 
   })
 
