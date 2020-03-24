@@ -4,99 +4,13 @@ library(lubridate)
 library(rvest)
 library(patchwork)
 library(leaflet)
-library(countrycode)
 library(plotly)
+library(scales)
 
 options(stringsAsFactors = FALSE)
 
-##################################################
-##                 DATA MUNGING                 ##
-##################################################
-
-# https://github.com/CSSEGISandData/COVID-19/tree/master/csse_covid_19_data/csse_covid_19_time_series
-
-confirmed <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Confirmed.csv") %>%
-  pivot_longer(cols = matches("^X[0-9]{1,2}"), names_to = "date", values_to = "n_confirmed") %>%
-  separate(date, c("month", "day", "year"), sep = "\\.") %>%
-  mutate(month = gsub("X", "", month),
-         year = paste0("20", year),
-         date = lubridate::date(paste(year, month, day, sep = "-")) ) %>%
-  dplyr::select(Country.Region, Province.State, Lat, Long, date, n_confirmed)
-
-deaths <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Deaths.csv") %>%
-  pivot_longer(cols = matches("^X[0-9]{1,2}"), names_to = "date", values_to = "n_deaths") %>%
-  separate(date, c("month", "day", "year"), sep = "\\.") %>%
-  mutate(month = gsub("X", "", month),
-         year = paste0("20", year),
-         date = lubridate::date(paste(year, month, day, sep = "-")) ) %>%
-  dplyr::select(Country.Region, Province.State, Lat, Long, date, n_deaths)
-
-recovered <- read.csv("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Recovered.csv") %>%
-  pivot_longer(cols = matches("^X[0-9]{1,2}"), names_to = "date", values_to = "n_recovered") %>%
-  separate(date, c("month", "day", "year"), sep = "\\.") %>%
-  mutate(month = gsub("X", "", month),
-         year = paste0("20", year),
-         date = lubridate::date(paste(year, month, day, sep = "-")) ) %>%
-  dplyr::select(Country.Region, Province.State, Lat, Long, date, n_recovered)
-
-full <- Reduce(function(...) merge(..., all = TRUE), list(confirmed, deaths, recovered))
-
-# deprecated: relabel this one so it's easier to find when alphabetized
-# full$Country.Region[full$Country.Region == "Mainland China"] <- "China (mainland)"
-
-national <- full %>%
-  group_by(Country.Region, date) %>%
-  summarize_at(vars(starts_with("n_")), sum)
-
-national_change <- national %>%
-  mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
-  slice(-1)
-
-global <- full %>%
-  group_by(date) %>%
-  summarize_at(vars(starts_with("n_")), sum)
-
-global_change <- global %>%
-  mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
-  slice(-1)    
-
-global_sans_china <- full %>%
-  filter(Country.Region != "China") %>%
-  group_by(date) %>%
-  summarize_at(vars(starts_with("n_")), sum)
-
-global_sans_china_change <- global_sans_china %>%
-  mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
-  slice(-1)
-
-state_names <- c(state.name, "District of Columbia")
-names(state_names) = c(state.abb, "DC")
-usa <- full %>%
-  filter(Country.Region == "US") %>%
-  separate(Province.State, into = c("locality", "state"), sep = ", ", fill = "left") %>%
-  mutate(state = str_trim(state)) %>%
-  mutate(state = ifelse(nchar(state) == 2, state_names[state], state)) %>%
-  mutate(state = ifelse(state == "D.C.", "District of Columbia", state)) %>%
-  filter(state %in% state_names) %>%
-  group_by(state, date) %>%
-  summarize_at(vars(starts_with("n_")), sum)
-names(state_names) = NULL
-
-usa_change <- usa %>%
-  mutate_at(vars(starts_with("n_")), function(x) x - lag(x)) %>%
-  slice(-1)
-
-# get links to WHO situation reports and give them pubdates as names
-sitreps <- read_html("https://www.who.int/emergencies/diseases/novel-coronavirus-2019/situation-reports/") %>%
-  html_nodes("a") %>%
-  html_attr("href") %>%
-  grep("[0-9]{8}-sitrep-[0-9]{1,3}", ., value = TRUE) %>%
-  sprintf("https://www.who.int%s", .) %>%
-  unique(.)
-
-sitrep_dates <- sitreps %>% str_extract("[0-9]{8}") %>% ymd()
-
-names(sitreps) <- sitrep_dates
+# run the scripts that load and munge the data from JHU CSEE
+walk(paste0("R/", grep("data_", list.files("R/"), value = TRUE)), source)
 
 ##################################################
 ##                      UI                      ##
@@ -215,12 +129,17 @@ ui <- shinyUI(fluidPage(
            fluidRow(                
    
              column(width = 3,
+
+               radioButtons("metric_rate", label = "", choices = c("confirmed cases", "deaths")),
+
                div(p("Double-click on a country name in the legend to see only that country's trace. 
                      Single-click on a country name in the legend to remove that country's trace from 
                      the plot (and click again to add it back). Hover on a line to see details for 
                      that country at that point in time."),
                    p("Use the selector below to set the benchmark growth rate (gray line) for comparison.")),
+
                br(),
+
                numericInput("growth_rate", label = "Growth rate:",
                             value = 0.3 , min = 0, max = 1, step = 0.1)),
 
@@ -252,12 +171,12 @@ ui <- shinyUI(fluidPage(
           br(),
                  
           div(p(strong("Creator:"), a(href = "https://github.com/ulfelder", "Jay Ulfelder", target = "_blank")), 
-              p(strong("R Packages:"), "shiny, tidyverse, lubridate, patchwork,  leaflet"),
+              p(strong("R Packages:"), "shiny, tidyverse, rvest, lubridate, patchwork,  scales, plotly, leaflet"),
               p(strong("Data Source:"), a("Johns Hopkins University CSEE", href = "https://github.com/CSSEGISandData/COVID-19", target = "_blank")),
               br(),
-              p("On the world map, the area of the circles is proportionate to the counts (the radius is the
-                square root of the count divided by pi), and the counts of deaths and recovered cases are nested
-                in the count of confirmed cases."),
+              p("On the world map, the area of the circles is proportionate to the counts (the radius is half the
+                square root of the latest count divided by pi), and the counts of deaths are nested in the counts of 
+                confirmed cases."),
               style = "font-family: courier;")
                  
         )
@@ -270,175 +189,111 @@ ui <- shinyUI(fluidPage(
   
 ))
 
-
-## SERVER LOGIC
+##################################################
+##                   SERVER                     ##
+##################################################
 
 server <- function(input, output, session) {
   
+  # helper functions to make plots of daily counts of confirmed cases and deaths
+  fig_confirmed <- function(dat) {
+
+    require(ggplot2)
+    require(scales)
+
+    ggplot(dat, aes(x = date, y = n_confirmed)) +
+      geom_col(alpha = 2/3, fill = "gray75") +
+      theme_minimal() +
+      scale_y_continuous(position = "right", labels = comma) +
+      labs(title = "Confirmed cases",
+           caption = "Data source: JHU CSEE") +
+      theme(axis.title.x = element_blank(),
+            axis.title.y = element_blank())
+
+  }
+
+  fig_deaths <- function(dat) {
+
+    require(ggplot2)
+    require(scales)
+
+    ggplot(dat, aes(x = date, y = n_deaths)) +
+      geom_col(alpha = 2/3, fill = "red") +
+      theme_minimal() +
+      scale_y_continuous(position = "right", labels = comma) +
+      labs(title = "Deaths",
+           caption = "Data source: JHU CSEE") +
+      theme(axis.title.x = element_blank(),
+            axis.title.y = element_blank())
+
+  }
+
+  # tab 1: plot of global trends
   output$plot_global <- renderPlot({
     
     if(input$china == "including China" & input$trendtype == "cumulative count") {
-      
-      global %>%
-        # recompute confirmed as net of deaths and recovered for stacked plotting
-        mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
-        pivot_longer(-date, names_to = "casetype", values_to = "n") %>%
-        mutate(casetype = gsub("n_", "", casetype)) %>%
-        ggplot(aes(x = date, y = n, fill = casetype)) +
-        geom_col(alpha = 2/3) +
-        theme_minimal() +
-        scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
-        labs(caption = "Data source: JHU CSEE") +
-        theme(axis.title.x = element_blank(),
-              axis.title.y = element_blank(),
-              legend.position = "bottom")
-      
+
+      df <- global
+
     } else if (input$china == "excluding China" & input$trendtype == "cumulative count") {
-      
-      global_sans_china %>%
-        # recompute confirmed as net of deaths and recovered for stacked plotting
-        mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
-        pivot_longer(-date, names_to = "casetype", values_to = "n") %>%
-        mutate(casetype = gsub("n_", "", casetype)) %>%
-        ggplot(aes(x = date, y = n, fill = casetype)) +
-        geom_col(alpha = 2/3) +
-        theme_minimal() +
-        scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
-        labs(caption = "Data source: JHU CSEE") +
-        theme(axis.title.x = element_blank(),
-              axis.title.y = element_blank(),
-              legend.position = "bottom")
-      
+
+      df <- global_sans_china
+
     } else if (input$china == "including China" & input$trendtype == "new cases") {
-      
-      new_confirmed <- global_change %>%
-        ggplot(aes(x = date, y = n_confirmed)) +
-        geom_col(alpha = 2/3, fill = "gray75") +
-        theme_minimal() +
-        labs(title = "New confirmed cases",
-             caption = "Data source: JHU CSEE") +
-        theme(axis.title.x = element_blank(),
-              axis.title.y = element_blank())
-      
-      new_deaths <- global_change %>%
-        ggplot(aes(x = date, y = n_deaths)) +
-        geom_col(alpha = 2/3, fill = "red") +
-        theme_minimal() +
-        labs(title = "New deaths",
-             caption = "Data source: JHU CSEE") +
-        theme(axis.title.x = element_blank(),
-              axis.title.y = element_blank())
-      
-      new_confirmed / new_deaths
-      
+
+      df <- global_change
+
     } else {
-      
-      new_confirmed <- global_sans_china_change %>%
-        ggplot(aes(x = date, y = n_confirmed)) +
-        geom_col(alpha = 2/3, fill = "gray75") +
-        theme_minimal() +
-        labs(title = "New confirmed cases",
-             caption = "Data source: JHU CSEE") +
-        theme(axis.title.x = element_blank(),
-              axis.title.y = element_blank())
-      
-      new_deaths <- global_sans_china_change %>%
-        ggplot(aes(x = date, y = n_deaths)) +
-        geom_col(alpha = 2/3, fill = "red") +
-        theme_minimal() +
-        labs(title = "New deaths",
-             caption = "Data source: JHU CSEE") +
-        theme(axis.title.x = element_blank(),
-              axis.title.y = element_blank())
-      
-      new_confirmed / new_deaths
-      
+
+      df <- global_sans_china_change
+
     }
-    
-  })
-  
-  output$plot_national <- renderPlot({
-    
-    cumulative <- national %>%
-      mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
-      pivot_longer(n_confirmed:n_recovered, names_to = "casetype", values_to = "n") %>%
-      filter(Country.Region == input$country) %>%
-      mutate(casetype = gsub("n_", "", casetype)) %>%
-      ggplot(aes(x = date, y = n, fill = casetype)) +
-      geom_col(alpha = 2/3) +
-      theme_minimal() +
-      scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
-      labs(caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank(),
-            legend.position = "bottom")
-    
-    new_confirmed <- national_change %>%
-      filter(Country.Region == input$country) %>%
-      ggplot(aes(x = date, y = n_confirmed)) +
-      geom_col(alpha = 2/3, fill = "gray75") +
-      theme_minimal() +
-      labs(title = "New confirmed cases",
-           caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank())
-    
-    new_deaths <- national_change %>%
-      filter(Country.Region == input$country) %>%
-      ggplot(aes(x = date, y = n_deaths)) +
-      geom_col(alpha = 2/3, fill = "red") +
-      theme_minimal() +
-      labs(title = "New deaths",
-           caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank())
-    
-    if (input$metric == "cumulative count") { print(cumulative) }
-    
-    else { print( new_confirmed / new_deaths ) }
-    
+
+    confirmed <- fig_confirmed(df)
+    deaths <- fig_deaths(df)
+
+    confirmed / deaths
+   
   })
 
+  # tab 2: plot of national trends   
+  output$plot_national <- renderPlot({
+
+    if (input$metric == "cumulative count") {
+
+      df <- filter(national, Country.Region == input$country)
+
+    } else {
+
+      df <- filter(national_change, Country.Region == input$country)
+
+    }
+
+    confirmed <- fig_confirmed(df)
+    deaths <- fig_deaths(df)
+
+    confirmed / deaths  
+
+  })
+
+  # tab 3: plot of u.s. state trends   
   output$plot_state <- renderPlot({
-    
-    cumulative <- usa %>%
-      mutate(n_confirmed = n_confirmed - n_deaths - n_recovered) %>%
-      pivot_longer(n_confirmed:n_recovered, names_to = "casetype", values_to = "n") %>%
-      filter(state == input$state) %>%
-      mutate(casetype = gsub("n_", "", casetype)) %>%
-      ggplot(aes(x = date, y = n, fill = casetype)) +
-      geom_col(alpha = 2/3) +
-      theme_minimal() +
-      scale_fill_manual(values = c("gray75", "red", "dodgerblue")) +
-      labs(caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank(),
-            legend.position = "bottom")
-    
-    new_confirmed <- usa_change %>%
-      filter(state == input$state) %>%
-      ggplot(aes(x = date, y = n_confirmed)) +
-      geom_col(alpha = 2/3, fill = "gray75") +
-      theme_minimal() +
-      labs(title = "New confirmed cases",
-           caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank())
-    
-    new_deaths <- usa_change %>%
-      filter(state == input$state) %>%
-      ggplot(aes(x = date, y = n_deaths)) +
-      geom_col(alpha = 2/3, fill = "red") +
-      theme_minimal() +
-      labs(title = "New deaths",
-           caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank())
-    
-    if (input$metric_state == "cumulative count") { print(cumulative) }
-    
-    else { print( new_confirmed / new_deaths ) }
-    
+
+    if (input$metric_state == "cumulative count") {
+
+      df <- filter(usa, state == input$state)
+
+    } else {
+
+      df <- filter(usa_change, state == input$state)
+
+    }
+
+    confirmed <- fig_confirmed(df)
+    deaths <- fig_deaths(df)
+
+    confirmed / deaths  
+
   })
 
   output$map_global <- renderLeaflet({
@@ -447,56 +302,86 @@ server <- function(input, output, session) {
     
     mapdat <- full %>%
       filter(date == selected_date) %>%
-      rename(latitude = Lat, longitude = Long) %>%
-      # recompute counts to radii of circles with proportionate area
-      mutate_at(vars(starts_with("n_")), ~ sqrt(./pi) )
+      # recompute counts to radii of circles with proportionate area; divide by 2 to make big ones fit better
+      mutate_at(vars(starts_with("n_")), ~ (sqrt(./pi))/2 )
     
-    # get coordinates of province at epicenter of epidemic to use as focal point for map
-    focal <- c(mapdat$latitude[mapdat$Province.State == "Hubei"], mapdat$longitude[mapdat$Province.State == "Hubei"])
+    # shift focal point to italy, now hardest hit and allows vis of north america and asia
+    focal <- c(mapdat$Lat[mapdat$Country.Region == "Italy"], mapdat$Long[mapdat$Country.Region == "Italy"])
     
     leaflet() %>%
       addProviderTiles(providers$CartoDB.Positron) %>%
       setView(lat = focal[1], lng = focal[2], zoom = 2) %>%
-      addCircleMarkers(data = mapdat, lat = ~latitude, lng = ~longitude, radius = ~n_confirmed,
+      addCircleMarkers(data = mapdat, lat = ~Lat, lng = ~Long, radius = ~n_confirmed,
                        color = "gray75", opacity = 0, fillOpacity = 1/4) %>%
-      addCircleMarkers(data = mapdat, lat = ~latitude, lng = ~longitude, radius = ~n_recovered,
-                       color = "dodgerblue", opacity = 0, fillOpacity = 1/4) %>%
-      addCircleMarkers(data = mapdat, lat = ~latitude, lng = ~longitude, radius = ~n_deaths,
+      addCircleMarkers(data = mapdat, lat = ~Lat, lng = ~Long, radius = ~n_deaths,
                        color = "red", opacity = 0, fillOpacity = 1/4) %>%
       addLegend(position = "bottomright",
-                colors = c("gray75", "dodgerblue", "red"), opacity = 1/10,
-                labels = c("confirmed", "recovered", "deaths"))
+                colors = c("gray75", "red"), opacity = 1,
+                labels = c("confirmed", "deaths"))
     
   })
-  
+
   output$plot_rate <- renderPlotly({
 
-    dat <- national %>%
-      filter(Country.Region != "Cruise Ship") %>%
-      filter(n_confirmed >= 100) %>%
-      mutate(level = log10(n_confirmed)) %>%
-      select(Country.Region, date, level) %>%
-      group_by(Country.Region) %>%
-      mutate(days_since_100th_case = row_number() - 1) %>%
-      mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, round(10^level, 0), days_since_100th_case))
+    if(input$metric_rate == "confirmed cases") {
 
-    p <- plot_ly(type = "scatter", mode = "lines")
-    countries <- sort(unique(dat$Country.Region))
-    for (i in countries) {
-      tmp <- filter(dat, Country.Region == i)
-      p <- p %>% add_lines(data = tmp, x = ~days_since_100th_case, y = ~level,
-                           hoverinfo = "text", text = ~hover_label,
-                           alpha = 1/2, name = i)
+      dat <- national %>%
+        filter(Country.Region != "Cruise Ship") %>%
+        filter(n_confirmed >= 100) %>%
+        mutate(level = log10(n_confirmed)) %>%
+        select(Country.Region, date, level) %>%
+        group_by(Country.Region) %>%
+        mutate(days_since_100th_case = row_number() - 1) %>%
+        mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, round(10^level, 0), days_since_100th_case))
+
+      p <- plot_ly(type = "scatter", mode = "lines")
+      countries <- sort(unique(dat$Country.Region))
+      for (i in countries) {
+        tmp <- filter(dat, Country.Region == i)
+        p <- p %>% add_lines(data = tmp, x = ~days_since_100th_case, y = ~level,
+                             hoverinfo = "text", text = ~hover_label,
+                             alpha = 1/2, name = i)
+      }
+
+      p %>% 
+        layout(xaxis = list(title = "days since 100+ confirmed cases"),
+               yaxis = list(title = "confirmed cases (logged)", range = c(2,5)),
+               shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
+                             x0 = 0, x1 = max(dat$days_since_100th_case),
+                             y0 = 2, y1 = log10(100 * (1 + input$growth_rate)^max(dat$days_since_100th_case)),
+                             opacity = 1/3, layer = "below"),
+               legend = list(x = 100, y = 0.5))
+
+    } else {
+
+      dat <- national %>%
+        filter(Country.Region != "Cruise Ship") %>%
+        filter(n_deaths >= 10) %>%
+        mutate(level = log10(n_deaths)) %>%
+        select(Country.Region, date, level) %>%
+        group_by(Country.Region) %>%
+        mutate(days_since_10th_case = row_number() - 1) %>%
+        mutate(hover_label = sprintf("%s: %s after %s days", Country.Region, round(10^level, 0), days_since_10th_case))
+
+      p <- plot_ly(type = "scatter", mode = "lines")
+      countries <- sort(unique(dat$Country.Region))
+      for (i in countries) {
+        tmp <- filter(dat, Country.Region == i)
+        p <- p %>% add_lines(data = tmp, x = ~days_since_10th_case, y = ~level,
+                             hoverinfo = "text", text = ~hover_label,
+                             alpha = 1/2, name = i)
+      }
+
+      p %>% 
+        layout(xaxis = list(title = "days since 10+ deaths"),
+               yaxis = list(title = "total deaths (logged)", range = c(1,5)),
+               shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
+                             x0 = 0, x1 = max(dat$days_since_10th_case),
+                             y0 = 1, y1 = log10(10 * (1 + input$growth_rate)^max(dat$days_since_10th_case)),
+                             opacity = 1/3, layer = "below"),
+               legend = list(x = 100, y = 0.5))
+
     }
-
-    p %>% 
-      layout(xaxis = list(title = "days since 100+ confirmed cases"),
-             yaxis = list(title = "confirmed cases (logged)", range = c(2,5)),
-             shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
-                           x0 = 0, x1 = max(dat$days_since_100th_case),
-                           y0 = 2, y1 = log10(100 * (1 + input$growth_rate)^max(dat$days_since_100th_case)),
-                           opacity = 1/3, layer = "below"),
-             legend = list(x = 100, y = 0.5))
 
   })
 
