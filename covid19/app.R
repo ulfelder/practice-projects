@@ -327,6 +327,7 @@ server <- function(input, output, session) {
 
       dat <- national %>%
         filter(Country.Region != "Cruise Ship") %>%
+        filter(!grepl("Princess", Country.Region)) %>%
         filter(n_confirmed >= 100) %>%
         mutate(level = log10(n_confirmed)) %>%
         select(Country.Region, date, level) %>%
@@ -345,7 +346,7 @@ server <- function(input, output, session) {
 
       p %>% 
         layout(xaxis = list(title = "days since 100+ confirmed cases"),
-               yaxis = list(title = "confirmed cases (logged)", range = c(2,5)),
+               yaxis = list(title = "confirmed cases (logged)", range = c(2,6)),
                shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
                              x0 = 0, x1 = max(dat$days_since_100th_case),
                              y0 = 2, y1 = log10(100 * (1 + input$growth_rate)^max(dat$days_since_100th_case)),
@@ -356,6 +357,7 @@ server <- function(input, output, session) {
 
       dat <- national %>%
         filter(Country.Region != "Cruise Ship") %>%
+        filter(!grepl("Princess", Country.Region)) %>%
         filter(n_deaths >= 10) %>%
         mutate(level = log10(n_deaths)) %>%
         select(Country.Region, date, level) %>%
