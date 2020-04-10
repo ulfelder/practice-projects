@@ -21,7 +21,7 @@ deaths <- "https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse
          date = lubridate::date(paste(year, month, day, sep = "-")) ) %>%
   dplyr::select(Country.Region, Province.State, Lat, Long, date, n_deaths)
 
-full <- full_join(confirmed, deaths)
+full <- merge(confirmed, deaths)
 
 national <- full %>%
   group_by(Country.Region, date) %>%
