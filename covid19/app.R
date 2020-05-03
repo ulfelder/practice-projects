@@ -133,15 +133,9 @@ ui <- shinyUI(fluidPage(
                           radioButtons("metric_rate", label = "", choices = c("confirmed cases", "deaths")),
                           
                           div(p("Double-click on a country name in the legend to see only that country's trace. 
-                     Single-click on a country name in the legend to remove that country's trace from 
-                     the plot (and click again to add it back). Hover on a line to see details for 
-                     that country at that point in time."),
-                              p("Use the selector below to set the benchmark growth rate (gray line) for comparison.")),
-                          
-                          br(),
-                          
-                          numericInput("growth_rate", label = "Growth rate:",
-                                       value = 0.3 , min = 0, max = 1, step = 0.1)),
+                                 Single-click on a country name in the legend to remove that country's trace from 
+                                 the plot (and click again to add it back). Hover on a line to see details for 
+                                 that country at that point in time."))),
                    
                    column(width = 9,
                           plotlyOutput("plot_rate", height = "450px"))
@@ -174,9 +168,8 @@ ui <- shinyUI(fluidPage(
                      p(strong("R Packages:"), "shiny, tidyverse, rvest, lubridate, patchwork,  scales, plotly, leaflet"),
                      p(strong("Data Source:"), a("Johns Hopkins University CSEE", href = "https://github.com/CSSEGISandData/COVID-19", target = "_blank")),
                      br(),
-                     p("On the world map, the area of the circles is proportionate to the counts (the radius is half the
-                square root of the latest count divided by pi), and the counts of deaths are nested in the counts of 
-                confirmed cases."),
+                     p("On the world map, the area of the circles is proportionate to the counts, and the counts of deaths
+                       are nested in the counts of confirmed cases."),
                      style = "font-family: courier;")
                  
                )
@@ -201,14 +194,15 @@ server <- function(input, output, session) {
     require(ggplot2)
     require(scales)
     
-    ggplot(dat, aes(x = date, y = n_confirmed)) +
-      geom_col(alpha = 2/3, fill = "gray75") +
-      theme_minimal() +
-      scale_y_continuous(position = "right", labels = comma) +
-      labs(title = "Confirmed cases",
-           caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank())
+    dat %>%
+      ggplot(aes(x = date, y = n_confirmed)) +
+        geom_col(alpha = 2/3, fill = "gray75") +
+        theme_minimal() +
+        scale_y_continuous(position = "right", labels = comma) +
+        labs(title = "Confirmed cases",
+             caption = "Data source: JHU CSEE") +
+        theme(axis.title.x = element_blank(),
+              axis.title.y = element_blank())
     
   }
   
@@ -217,14 +211,15 @@ server <- function(input, output, session) {
     require(ggplot2)
     require(scales)
     
-    ggplot(dat, aes(x = date, y = n_deaths)) +
-      geom_col(alpha = 2/3, fill = "red") +
-      theme_minimal() +
-      scale_y_continuous(position = "right", labels = comma) +
-      labs(title = "Deaths",
-           caption = "Data source: JHU CSEE") +
-      theme(axis.title.x = element_blank(),
-            axis.title.y = element_blank())
+    dat %>% 
+      ggplot(aes(x = date, y = n_deaths)) +
+        geom_col(alpha = 2/3, fill = "red") +
+        theme_minimal() +
+        scale_y_continuous(position = "right", labels = comma) +
+        labs(title = "Deaths",
+             caption = "Data source: JHU CSEE") +
+        theme(axis.title.x = element_blank(),
+              axis.title.y = element_blank())
     
   }
   
@@ -302,8 +297,8 @@ server <- function(input, output, session) {
     
     mapdat <- full %>%
       filter(date == selected_date) %>%
-      # recompute counts to radii of circles with proportionate area; divide by 2 to make big ones fit better
-      mutate_at(vars(starts_with("n_")), ~ (sqrt(./pi))/2 )
+      # recompute counts to radii of circles with proportionate area; divide by 3 to make big ones fit better
+      mutate_at(vars(starts_with("n_")), ~ (sqrt(./pi))/5 )
     
     # shift focal point to italy, now hardest hit and allows vis of north america and asia
     focal <- c(mapdat$Lat[mapdat$Country.Region == "Italy"], mapdat$Long[mapdat$Country.Region == "Italy"])
@@ -316,7 +311,7 @@ server <- function(input, output, session) {
       addCircleMarkers(data = mapdat, lat = ~Lat, lng = ~Long, radius = ~n_deaths,
                        color = "red", opacity = 0, fillOpacity = 1/4) %>%
       addLegend(position = "bottomright",
-                colors = c("gray75", "red"), opacity = 1,
+                colors = c("gray", "red"), opacity = 1,
                 labels = c("confirmed", "deaths"))
     
   })
@@ -326,7 +321,7 @@ server <- function(input, output, session) {
     if(input$metric_rate == "confirmed cases") {
       
       dat <- national %>%
-        filter(Country.Region != "Cruise Ship" & Country.Region != "Diamond Princess") %>%
+        filter(!(Country.Region %in% c("Cruise Ship", "Diamond Princess", "MS Zaandam"))) %>%
         filter(n_confirmed >= 100) %>%
         mutate(level = log10(n_confirmed)) %>%
         select(Country.Region, date, level) %>%
@@ -345,17 +340,13 @@ server <- function(input, output, session) {
       
       p %>% 
         layout(xaxis = list(title = "days since 100+ confirmed cases"),
-               yaxis = list(title = "confirmed cases (logged)", range = c(2,6)),
-               shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
-                             x0 = 0, x1 = max(dat$days_since_100th_case),
-                             y0 = 2, y1 = log10(100 * (1 + input$growth_rate)^max(dat$days_since_100th_case)),
-                             opacity = 1/3, layer = "below"),
+               yaxis = list(title = "confirmed cases (logged)", range = c(2,7)),
                legend = list(x = 100, y = 0.5))
       
     } else {
       
       dat <- national %>%
-        filter(Country.Region != "Cruise Ship" & Country.Region != "Diamond Princess") %>%
+        filter(!(Country.Region %in% c("Cruise Ship", "Diamond Princess", "MS Zaandam"))) %>%
         filter(n_deaths >= 10) %>%
         mutate(level = log10(n_deaths)) %>%
         select(Country.Region, date, level) %>%
@@ -374,11 +365,7 @@ server <- function(input, output, session) {
       
       p %>% 
         layout(xaxis = list(title = "days since 10+ deaths"),
-               yaxis = list(title = "total deaths (logged)", range = c(1,5)),
-               shapes = list(type = "line", line = list(color = I("gray75"), width = 1.5),
-                             x0 = 0, x1 = max(dat$days_since_10th_case),
-                             y0 = 1, y1 = log10(10 * (1 + input$growth_rate)^max(dat$days_since_10th_case)),
-                             opacity = 1/3, layer = "below"),
+               yaxis = list(title = "total deaths (logged)", range = c(1,6)),
                legend = list(x = 100, y = 0.5))
       
     }
